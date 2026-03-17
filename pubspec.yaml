@@ -1,0 +1,88 @@
+name: nasira
+description: Nasira Windows Desktop App
+publish_to: "none"
+
+version: 1.0.0+1
+
+environment:
+  sdk: ">=3.3.0 <4.0.0"
+
+dependencies:
+  excel: ^4.0.6
+  file_picker: ^10.3.10
+  flutter:
+    sdk: flutter
+  path_provider: ^2.1.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/
+    - assets/data/
+    - assets/metacom/Artikel/
+    - assets/metacom/Arzt_Gesundheit/
+    - assets/metacom/Behaelter_Taschen/
+    - assets/metacom/Berufe/
+    - assets/metacom/Buchstaben_Schreiben/
+    - assets/metacom/Buch_Zeitung/
+    - assets/metacom/Buero_Basteln/
+    - assets/metacom/Computer/
+    - assets/metacom/Didaktikmaterial/
+    - assets/metacom/Eigenschaften_Emotionen/
+    - assets/metacom/Einkaufen/
+    - assets/metacom/Fahrzeuge/
+    - assets/metacom/Fantasie/
+    - assets/metacom/Farben_Formen/
+    - assets/metacom/Feste/
+    - assets/metacom/Flaggen/
+    - assets/metacom/Fragen/
+    - assets/metacom/Geografie/
+    - assets/metacom/Geschirr/
+    - assets/metacom/Haus/
+    - assets/metacom/Hausarbeit/
+    - assets/metacom/Hilfsmittel/
+    - assets/metacom/Kleidung_Accessoires/
+    - assets/metacom/Kleine_Worte/
+    - assets/metacom/Koerperpflege/
+    - assets/metacom/Koerperteile/
+    - assets/metacom/Konversation_Interaktion/
+    - assets/metacom/Landschaft/
+    - assets/metacom/Lebensmittel_Essen/
+    - assets/metacom/Lebensmittel_Trinken/
+    - assets/metacom/Liebe_Sexualitaet/
+    - assets/metacom/Lieder_Bis_Weihnachten/
+    - assets/metacom/Lieder_Haende_auf_Reisen/
+    - assets/metacom/Lieder_Haeuptling_sprechende_Hand/
+    - assets/metacom/Lieder_Mit_den_Haenden/
+    - assets/metacom/Musik/
+    - assets/metacom/Personen/
+    - assets/metacom/Pfeile_Funktionen/
+    - assets/metacom/Pflanzen/
+    - assets/metacom/Politik/
+    - assets/metacom/Pronomen/
+    - assets/metacom/Raumschilder/
+    - assets/metacom/Raumschilder_Tuer/
+    - assets/metacom/Religion/
+    - assets/metacom/Schule_Foerdereinrichtung/
+    - assets/metacom/Sonstiges/
+    - assets/metacom/Spielen/
+    - assets/metacom/Sport/
+    - assets/metacom/Stadt_Verkehr/
+    - assets/metacom/Therapie/
+    - assets/metacom/Tiere/
+    - assets/metacom/TV_Audio_Foto/
+    - assets/metacom/Urlaub_Spass/
+    - assets/metacom/Verben/
+    - assets/metacom/Verhalten/
+    - assets/metacom/Werkzeug_Werkstatt/
+    - assets/metacom/Wetter_Himmel/
+    - assets/metacom/Zahlen_Rechnen/
+    - assets/metacom/Zeit/
+    - assets/metacom/Zeit_Alternativsymbole/
+
