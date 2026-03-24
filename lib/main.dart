@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'nasira_home_page.dart';
+import 'embedding_service.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await EmbeddingService.init();
   runApp(const NasiraApp());
 }
 

@@ -21,11 +21,25 @@ class SymbolEntry {
 
   factory SymbolEntry.fromJson(Map<String, dynamic> json) {
     final rawCategory = (json['category'] as String?)?.trim() ?? '';
+    final fileName   = json['fileName'] as String;
+
+    // "Nomen & Sonstiges" ist eine Catch-All-Kategorie aus dem Importer.
+    // Wir leiten die echte Kategorie aus dem Dateipfad ab:
+    //   "Tiere\maus.jpg"    → "Tiere"
+    //   "Computer/maus.jpg" → "Computer"
+    final String category;
+    if (rawCategory.isEmpty || rawCategory == 'Nomen & Sonstiges') {
+      final parts = fileName.replaceAll('\\', '/').split('/');
+      category = parts.length > 1 ? parts.first : 'Sonstiges';
+    } else {
+      category = rawCategory;
+    }
+
     return SymbolEntry(
       id: json['id'] as String,
       label: json['label'] as String,
-      fileName: json['fileName'] as String,
-      category: rawCategory.isNotEmpty ? rawCategory : 'Sonstiges',
+      fileName: fileName,
+      category: category,
     );
   }
 

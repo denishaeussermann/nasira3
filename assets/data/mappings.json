@@ -6,5 +6,6 @@
   { "wordId": "w5", "symbolId": "s5" },
   { "wordId": "w6", "symbolId": "s6" },
   { "wordId": "w7", "symbolId": "s7" },
-  { "wordId": "w10", "symbolId": "s8" }
+  { "wordId": "w10", "symbolId": "s8" },
+  { "wordId": "w16", "symbolId": "s9" }
 ]

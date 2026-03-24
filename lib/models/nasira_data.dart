@@ -168,11 +168,12 @@ class NasiraData {
     final result = searchSymbol(word);
     if (!result.hasMatch) return null;
 
-    // Treffer aus dem Index zurückgeben
-    final normalized = normalize(word);
-    return _mappedByNormalizedWord[normalized] ??
-        _mappedByFileName[normalized] ??
-        _mappedByStrippedWord[strip(word)];
+    // Treffer über das gematchte Wort nachschlagen (nicht das Original).
+    // Beispiel: "computer" → matchedWord="computer1" → korrekt gefunden.
+    final matchedNorm = normalize(result.matchedWord);
+    return _mappedByNormalizedWord[matchedNorm] ??
+        _mappedByFileName[matchedNorm] ??
+        _mappedByStrippedWord[strip(result.matchedWord)];
   }
 
   /// Legacy-Kompatibilität: gibt SymbolEntry? zurück.
@@ -240,11 +241,19 @@ class NasiraData {
     return _categoryByWord[normalize(word)];
   }
 
+  /// Wie [categoryForWord], aber mit Symbol-Fallback für Wörter die
+  /// nicht direkt in den Mappings stehen (z.B. "computer" → "computer1").
+  String? categoryForWordFuzzy(String word) {
+    final direct = _categoryByWord[normalize(word)];
+    if (direct != null) return direct;
+    return mappedSymbolForWord(word)?.symbol.category;
+  }
+
   /// Gibt Wörter aus derselben Kategorie zurück.
   ///
   /// Nützlich für Vorschläge: "werkzeug" → hammer, säge, schraubenzieher...
   List<WordEntry> wordsInSameCategory(String word, {int limit = 14}) {
-    final category = categoryForWord(word);
+    final category = categoryForWordFuzzy(word);
     if (category == null) return [];
 
     final wordNorm = normalize(word);

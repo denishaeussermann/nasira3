@@ -1,9 +1,17 @@
 import 'package:flutter/material.dart';
-
 import 'models/models.dart';
-import 'nasira_context_service.dart'; // enthält NasiraImportService
 import 'nasira_repository.dart';
 import 'services/services.dart';
+
+// Extensions für firstWhereOrNull
+extension ListExtension<T> on List<T> {
+  T? firstWhereOrNull(bool Function(T) test) {
+    for (final element in this) {
+      if (test(element)) return element;
+    }
+    return null;
+  }
+}
 
 enum InputMode {
   keyboard,
@@ -31,12 +39,58 @@ class _NasiraHomePageState extends State<NasiraHomePage> {
   final TextEditingController _symbolSearchController = TextEditingController();
   final ScrollController _editorScrollController = ScrollController();
 
+  // ── Symbol-Lookup-Cache ───────────────────────────────────────────────
+  final Map<String, MappedSymbol?> _symbolCache = {};
+
+  MappedSymbol? _cachedLookup(NasiraData data, String word) {
+    final cacheKey =
+        word.toLowerCase().trim().replaceAll(RegExp(r'[^\wäöüß]'), '');
+    if (_symbolCache.containsKey(cacheKey)) return _symbolCache[cacheKey];
+
+    // 1. Direkter Lookup
+    final result = _symbolLookup.lookup(data, cacheKey, silent: false);
+    if (result.symbol != null && result.searchResult.score >= 0.3) {
+      _symbolCache[cacheKey] = result.symbol;
+      return result.symbol;
+    }
+
+    // 2. Partizip → Grundform → Lookup
+    final base = NasiraContextService.partizipToBase(cacheKey);
+    if (base != null) {
+      final baseResult = _symbolLookup.lookup(data, base, silent: false);
+      if (baseResult.symbol != null && baseResult.searchResult.score >= 0.5) {
+        _symbolCache[cacheKey] = baseResult.symbol;
+        return baseResult.symbol;
+      }
+    }
+
+    // 3. Stufe 7: Embedding-Fallback (async)
+    // silent: true — Stufen 1–6 wurden oben bereits mit lookup() geloggt.
+    // Embedding-Treffer (Stufe 7) werden über onEmbeddingResult behandelt.
+    _symbolCache[cacheKey] = null; // Platzhalter – wird bei Treffer überschrieben
+    _symbolLookup.lookupWithFallback(
+      data,
+      cacheKey,
+      silent: true,
+      onEmbeddingResult: (embResult) {
+        if (embResult.symbol != null && mounted) {
+          setState(() => _symbolCache[cacheKey] = embResult.symbol);
+        }
+      },
+    );
+    return null;
+  }
+
+  void _clearSymbolCache() => _symbolCache.clear();
+
   InputMode _inputMode = InputMode.keyboard;
   List<WordEntry> _suggestions = [];
-  bool _isImporting = false;
+  int _suggestionVersion = 0;
+  String _lastHandledText = '';
+
+  final bool _isImporting = false;
   String _statusText = 'Nasira startet ...';
   String _selectedCategory = 'Alle';
-  int _lastLoggedTokenCount = 0;
 
   @override
   void initState() {
@@ -81,30 +135,59 @@ class _NasiraHomePageState extends State<NasiraHomePage> {
   }
 
   Future<void> _handleTextChanged() async {
+    // Nur bei echten Textänderungen reagieren — Cursor-Bewegungen ignorieren.
+    final currentText = _textController.text;
+    if (currentText == _lastHandledText) return;
+    _lastHandledText = currentText;
+
+    final myVersion = ++_suggestionVersion;
     final data = await _resolveActiveData();
+    if (myVersion != _suggestionVersion) return;
     final text = _textController.text;
 
-    // Log nur wenn neue Wörter abgeschlossen sind (mit Leerzeichen)
-    final endsWithSpace = RegExp(r'\s$').hasMatch(text);
-    if (endsWithSpace) {
-      final tokens = text.trim().split(RegExp(r'\s+'))
-          .where((t) => t.trim().isNotEmpty).toList();
-      // Nur neue Tokens loggen
-      for (var i = _lastLoggedTokenCount; i < tokens.length; i++) {
-        _symbolLookup.lookup(data, tokens[i]); // verbose (logs)
+    // 1. Normale SuggestionEngine
+    final normal = _suggestionEngine.computeSuggestions(data, text, symbolCache: _symbolCache);
+    final logTokens = text.trim().split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+    final logCtx = logTokens.length > 2 ? '…${logTokens.sublist(logTokens.length - 2).join(' ')}' : text.trim();
+    debugPrint('[SUGGEST] "$logCtx" → ${normal.map((w) => w.text).join(', ')}');
+
+    // 2. SymbolLookup für Kontext-Token (letzte 3)
+    final contextTokens = text
+        .split(RegExp(r'\s+'))
+        .where((t) => t.length >= 2)
+        .toList()
+        .reversed
+        .take(3)
+        .toList();
+
+    final lookupWords = <WordEntry>[];
+    for (final token in contextTokens) {
+      final result = _symbolLookup.lookup(data, token, silent: true);
+      if (result.symbol != null &&
+          result.searchResult.score >= 0.3) {
+        // Finde WordEntry zur matchedWord
+        final matchText = result.searchResult.matchedWord;
+        final matchEntry = data.words
+            .where((w) =>
+                w.text.toLowerCase() == token.toLowerCase() ||
+                w.text.toLowerCase() == matchText.toLowerCase())
+            .firstOrNull;
+        if (matchEntry != null) lookupWords.add(matchEntry);
       }
-      _lastLoggedTokenCount = tokens.length;
     }
 
-    final suggestions = _suggestionEngine.computeSuggestions(data, text);
-    if (!mounted) return;
-    setState(() {
-      _suggestions = suggestions;
-    });
+    // 3. Kombiniere + Duplikate entfernen
+    final allSuggestions = <WordEntry>[
+      ...normal,
+      ...lookupWords.where((newW) => !normal
+          .any((oldW) => oldW.text.toLowerCase() == newW.text.toLowerCase()))
+    ].take(14).toList();
+
+    if (myVersion != _suggestionVersion || !mounted) return;
+    setState(() => _suggestions = allSuggestions);
   }
 
   // ── Texteingabe ───────────────────────────────────────────────────────
-
   String _replaceTrailingToken(String currentText, String newWord) {
     if (currentText.trim().isEmpty) return '$newWord ';
     final endsWithWhitespace = RegExp(r'\s$').hasMatch(currentText);
@@ -117,7 +200,14 @@ class _NasiraHomePageState extends State<NasiraHomePage> {
   }
 
   void _insertWord(WordEntry word) {
-    final updated = _replaceTrailingToken(_textController.text, word.text);
+    _futureLoad.then((result) {
+      _symbolLookup.lookup(result.data, word.text.toLowerCase().trim(),
+          silent: false);
+    });
+
+    // Zahlensuffix entfernen: "computer1" → "computer", "computerraum2 r" bleibt
+    final insertText = word.text.replaceAll(RegExp(r'(?<=[a-zA-ZäöüÄÖÜß])\d+$'), '');
+    final updated = _replaceTrailingToken(_textController.text, insertText);
     _textController.value = TextEditingValue(
       text: updated,
       selection: TextSelection.collapsed(offset: updated.length),
@@ -126,13 +216,13 @@ class _NasiraHomePageState extends State<NasiraHomePage> {
 
   void _clearText() {
     _textController.clear();
-    _lastLoggedTokenCount = 0;
+    _clearSymbolCache();
   }
 
   // ── Datenverwaltung ───────────────────────────────────────────────────
-
   Future<void> _switchToBundledData() async {
     await _repository.setPreferredSourceImported(false);
+    _clearSymbolCache();
     setState(() {
       _futureLoad = _repository.loadPreferred();
       _suggestions = [];
@@ -144,6 +234,7 @@ class _NasiraHomePageState extends State<NasiraHomePage> {
 
   Future<void> _switchToImportedData() async {
     await _repository.setPreferredSourceImported(true);
+    _clearSymbolCache();
     setState(() {
       _futureLoad = _repository.loadPreferred();
       _suggestions = [];
@@ -155,6 +246,7 @@ class _NasiraHomePageState extends State<NasiraHomePage> {
 
   Future<void> _reloadImportedData() async {
     await _repository.setPreferredSourceImported(true);
+    _clearSymbolCache();
     setState(() {
       _futureLoad = _repository.loadImported();
       _suggestions = [];
@@ -166,53 +258,23 @@ class _NasiraHomePageState extends State<NasiraHomePage> {
 
   Future<void> _runImport() async {
     setState(() {
-      _isImporting = true;
-      _statusText = 'Import läuft ...';
+      _statusText = 'Import-Funktion nicht verfügbar.';
     });
-
-    try {
-      final report = await NasiraImportService().pickAndImport();
-      if (report == null) {
-        setState(() {
-          _isImporting = false;
-          _statusText = 'Import abgebrochen.';
-        });
-        return;
-      }
-      await _repository.setPreferredSourceImported(true);
-      setState(() {
-        _futureLoad = _repository.loadPreferred();
-        _suggestions = [];
-        _selectedCategory = 'Alle';
-        _symbolSearchController.clear();
-        _isImporting = false;
-        _statusText =
-            'Import erfolgreich: Grundwortschatz ${report.excelWordCount}, '
-            'ergänzte Wörter ${report.addedWordCount}, '
-            'Symbole ${report.txtSymbolCount}, '
-            'Verknüpfungen ${report.mappedCount}. '
-            'Arbeitsordner: ${report.exportFolder}';
-      });
-    } catch (e) {
-      setState(() {
-        _isImporting = false;
-        _statusText = 'Importfehler: $e';
-      });
-    }
   }
 
   // ── Satz-Tokens ───────────────────────────────────────────────────────
-
   List<String> _sentenceTokens(String text) {
-    return text
+    final rawTokens = text
         .trim()
         .split(RegExp(r'\s+'))
         .where((token) => token.trim().isNotEmpty)
+        .map((token) => token.trim())
+        .where((token) => token.length >= 2)
         .toList();
+    return rawTokens;
   }
 
   // ── Widget-Builder ────────────────────────────────────────────────────
-
   Widget _buildSuggestionSymbolArea(WordEntry word, MappedSymbol mapped) {
     final resolvedAssetPath = _assetResolver.resolveForSymbol(mapped);
     return Container(
@@ -296,9 +358,7 @@ class _NasiraHomePageState extends State<NasiraHomePage> {
     if (word == null) {
       return const Card(elevation: 1, child: SizedBox.expand());
     }
-
-    final mapped = _symbolLookup.lookup(data, word.text, silent: true).symbol;
-
+    final mapped = _cachedLookup(data, word.text);
     return Tooltip(
       message: word.text,
       waitDuration: const Duration(milliseconds: 250),
@@ -389,14 +449,14 @@ class _NasiraHomePageState extends State<NasiraHomePage> {
       child: Text(
         'Aktive Datenquelle: ${loadResult.sourceLabel}\n'
         'Import-Ordner: ${loadResult.importFolderPath}\n'
-        'Asset-Index: ${_assetResolver.isReady ? "${_assetResolver.imageCount} Bilder gefunden" : "wird geladen ..."}\n'
+        'Asset-Index: ${_assetResolver.isReady ? "${_assetResolver.imageCount} Bilder gefunden" : "wird geladen ..."} \n'
         'Such-Log: ${_searchLog.summary}',
       ),
     );
   }
 
   Widget _buildSentenceToken(NasiraData data, String word) {
-    final mapped = _symbolLookup.lookup(data, word, silent: true).symbol;
+    final mapped = _cachedLookup(data, word);
     final resolvedAssetPath =
         mapped != null ? _assetResolver.resolveForSymbol(mapped) : null;
     return SizedBox(
@@ -412,27 +472,13 @@ class _NasiraHomePageState extends State<NasiraHomePage> {
                     width: 44,
                     height: 44,
                     fit: BoxFit.contain,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const SizedBox(width: 44, height: 44);
-                    },
                   )
                 : const SizedBox(width: 44, height: 44),
           ),
-          const SizedBox(height: 4),
-          SizedBox(
-            height: 36,
-            child: Center(
-              child: Text(
-                word,
-                textAlign: TextAlign.center,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ),
+          Text(
+            word,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -441,34 +487,55 @@ class _NasiraHomePageState extends State<NasiraHomePage> {
 
   Widget _buildSentencePreview(NasiraData data) {
     final tokens = _sentenceTokens(_textController.text);
-    return SizedBox(
-      height: 130,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(10),
-        decoration: BoxDecoration(
-          color: Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade300),
+    final total = tokens.length;
+    final matched = tokens.where((t) => _cachedLookup(data, t) != null).length;
+    final quoteText = total > 0
+        ? '$matched/$total Wörter mit Symbol (${(matched / total * 100).round()}%)'
+        : '';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          height: 130,
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.grey.shade50,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.grey.shade300),
+            ),
+            child: tokens.isEmpty
+                ? Center(
+                    child: Text(
+                      'Hier erscheinen über jedem geschriebenen Wort die zugehörigen Symbole.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Colors.grey.shade600),
+                    ),
+                  )
+                : SingleChildScrollView(
+                    child: Wrap(
+                      spacing: 2,
+                      runSpacing: 10,
+                      children: tokens
+                          .map((token) => _buildSentenceToken(data, token))
+                          .toList(),
+                    ),
+                  ),
+          ),
         ),
-        child: tokens.isEmpty
-            ? Center(
-                child: Text(
-                  'Hier erscheinen über jedem geschriebenen Wort die zugehörigen Symbole.',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey.shade600),
-                ),
-              )
-            : SingleChildScrollView(
-                child: Wrap(
-                  spacing: 2,
-                  runSpacing: 10,
-                  children: tokens
-                      .map((token) => _buildSentenceToken(data, token))
-                      .toList(),
-                ),
-              ),
-      ),
+        if (quoteText.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            'Symbolabdeckung: $quoteText',
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey.shade700,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -481,7 +548,6 @@ class _NasiraHomePageState extends State<NasiraHomePage> {
     final displayedStatusText = _statusText == 'Nasira startet ...'
         ? 'Bereit. ${loadResult.sourceLabel} ist geladen.'
         : _statusText;
-
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -773,6 +839,7 @@ class _NasiraHomePageState extends State<NasiraHomePage> {
             ),
           );
         }
+
         final loadResult = snapshot.data!;
         final data = loadResult.data;
         final displayedSuggestions = _suggestions.isEmpty

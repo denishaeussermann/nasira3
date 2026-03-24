@@ -1,3 +1,7 @@
+import 'dart:math' as math;
+import 'dart:typed_data';
+
+import '../embedding_service.dart';
 import '../models/models.dart';
 import '../nasira_import_service.dart';
 
@@ -14,6 +18,16 @@ import '../nasira_import_service.dart';
 class SuggestionEngine {
   static const int defaultLimit = 14;
 
+  /// Kategorien, die als Funktionswörter gelten.
+  /// Werden bei der Kontext-Kategorie-Erkennung übersprungen,
+  /// damit z.B. "gern" nach "essen" nicht die Kategorie bestimmt.
+  static const Set<String> _functionWordCategories = {
+    'Kleine_Worte',
+    'Pronomen',
+    'Fragewörter',
+    'Konjunktionen',
+  };
+
   /// Prüft ob ein Wort ein Dateipfad oder ungültig ist.
   static bool _isValidWord(WordEntry w) {
     final t = w.text;
@@ -24,8 +38,29 @@ class SuggestionEngine {
         t.length <= 50;
   }
 
+  /// Gibt die Kategorie eines Wortes zurück — zuerst aus NasiraData,
+  /// dann aus dem Symbol-Cache (enthält Stufe-7-Ergebnisse).
+  static String? _categoryFor(
+    String word,
+    NasiraData data,
+    Map<String, MappedSymbol?>? cache,
+  ) {
+    final direct = data.categoryForWordFuzzy(word);
+    if (direct != null) return direct;
+    if (cache == null) return null;
+    final key = word.toLowerCase().trim().replaceAll(RegExp(r'[^\wäöüß]'), '');
+    return cache[key]?.symbol.category;
+  }
+
   /// Berechnet Vorschläge für den aktuellen Text.
-  List<WordEntry> computeSuggestions(NasiraData data, String text) {
+  ///
+  /// [symbolCache] — optionaler Symbol-Cache aus der UI (enthält
+  /// bereits berechnete Stufe-7-Ergebnisse für bereits gesehene Wörter).
+  List<WordEntry> computeSuggestions(
+    NasiraData data,
+    String text, {
+    Map<String, MappedSymbol?>? symbolCache,
+  }) {
     if (text.trim().isEmpty) {
       return _filtered(data.initialSuggestions(limit: defaultLimit + 10));
     }
@@ -65,30 +100,61 @@ class SuggestionEngine {
       if (results.isNotEmpty) return _filtered(results);
     }
 
-    // ── Schritt 4: Präfix-Suche auf aktuellem Token ───────────────
+    // ── Schritt 4: Kontextbewusste Präfix-Suche ───────────────────
     if (!endsWithWhitespace && currentPartial.isNotEmpty) {
-      final prefixResults = data
-          .searchByPrefix(currentPartial, limit: defaultLimit + 20)
-          .where(_isValidWord)
-          .take(defaultLimit)
-          .toList();
+      final prefixResults = _contextAwarePrefixSearch(
+          data, currentPartial, completedTokens, symbolCache);
       if (prefixResults.isNotEmpty) return prefixResults;
     }
 
     // ── Schritt 5: Kategorie-Vorschläge ───────────────────────────
+    // Funktionswörter (Kleine_Worte, Pronomen…) überspringen;
+    // stattdessen das letzte Inhaltswort im Kontext nutzen.
     if (endsWithWhitespace && completedTokens.isNotEmpty) {
-      final categoryResults = _categorySuggestions(data, completedTokens.last);
-      if (categoryResults.isNotEmpty) return categoryResults;
+      final contentWord = completedTokens.reversed.firstWhere(
+        (t) {
+          final cat = _categoryFor(t, data, symbolCache);
+          return cat != null &&
+              cat != 'Sonstiges' &&
+              !_functionWordCategories.contains(cat);
+        },
+        orElse: () => '',
+      );
+      if (contentWord.isNotEmpty) {
+        final categoryResults = _categorySuggestions(data, contentWord);
+        if (categoryResults.isNotEmpty) return categoryResults;
+      }
     }
 
-    // ── Schritt 6: nextWord nach letztem Token ────────────────────
+    // ── Schritt 6: nextWord nach letztem Token (kontextbewusst) ──
     if (completedTokens.isNotEmpty) {
       final nextWords = data
           .nextWordSuggestions(completedTokens.last, limit: defaultLimit + 10)
           .where(_isValidWord)
-          .take(defaultLimit)
           .toList();
-      if (nextWords.isNotEmpty) return nextWords;
+
+      // Kategorie-Erweiterung: Wörter aus denselben Kategorien wie
+      // die letzten Inhaltswort-Tokens hinzufügen (Funktionswörter überspringen).
+      // So landet z.B. "mausklick" im Pool auch wenn der Corpus
+      // es nicht als Folgewort von "maus" kennt.
+      final categoryPool = <WordEntry>{};
+      int contentTokensAdded = 0;
+      for (final token in completedTokens.reversed) {
+        if (contentTokensAdded >= 3) break;
+        final cat = _categoryFor(token, data, symbolCache);
+        if (cat == null || cat == 'Sonstiges' || _functionWordCategories.contains(cat)) {
+          continue;
+        }
+        data.wordsInSameCategory(token, limit: 30)
+            .where(_isValidWord)
+            .forEach(categoryPool.add);
+        contentTokensAdded++;
+      }
+
+      final combined = <WordEntry>{...nextWords, ...categoryPool}.toList();
+      if (combined.isNotEmpty) {
+        return _reRankByContext(combined, completedTokens, data, symbolCache);
+      }
     }
 
     return _filtered(data.initialSuggestions(limit: defaultLimit + 10));
@@ -135,6 +201,132 @@ class SuggestionEngine {
     }
 
     return combined.take(defaultLimit).toList();
+  }
+
+  // ── Kontextbewusstes Re-Ranking ─────────────────────────────────────
+
+  List<WordEntry> _reRankByContext(
+    List<WordEntry> candidates,
+    List<String> completedTokens,
+    NasiraData data,
+    Map<String, MappedSymbol?>? symbolCache,
+  ) {
+    if (completedTokens.isEmpty) return candidates.take(defaultLimit).toList();
+
+    EmbeddingService? emb;
+    try { emb = EmbeddingService.instance; } catch (_) {}
+    if (emb == null) return candidates.take(defaultLimit).toList();
+
+    final contextVecs = completedTokens.reversed
+        .take(5)
+        .map((t) => emb!.vecFor(NasiraData.normalize(t)))
+        .whereType<Float32List>()
+        .toList();
+    if (contextVecs.isEmpty) return candidates.take(defaultLimit).toList();
+    final contextVec = _avgVec(contextVecs);
+
+    final contextCategory = completedTokens.reversed
+        .take(5)
+        .map((t) => _categoryFor(t, data, symbolCache))
+        .firstWhere(
+          (c) =>
+              c != null &&
+              c != 'Sonstiges' &&
+              !_functionWordCategories.contains(c),
+          orElse: () => null,
+        );
+
+    final scored = candidates.map((w) {
+      final wVec = emb!.vecFor(NasiraData.normalize(w.text));
+      final contextSim =
+          wVec != null ? _cosine(contextVec, wVec).clamp(0.0, 1.0) : 0.0;
+      final rankScore = 1.0 / (1.0 + math.log(w.rank.clamp(1, 1000000).toDouble()));
+      final wordCat   = _categoryFor(w.text, data, symbolCache);
+      final catBonus  = (contextCategory != null && wordCat == contextCategory) ? 0.3 : 0.0;
+      return (w, 0.5 * contextSim + 0.2 * rankScore + catBonus);
+    }).toList()
+      ..sort((a, b) => b.$2.compareTo(a.$2));
+
+    return scored.map((s) => s.$1).take(defaultLimit).toList();
+  }
+
+  // ── Kontextbewusste Präfix-Suche ────────────────────────────────────
+
+  List<WordEntry> _contextAwarePrefixSearch(
+    NasiraData data,
+    String partial,
+    List<String> completedTokens,
+    Map<String, MappedSymbol?>? symbolCache,
+  ) {
+    final candidates = data
+        .searchByPrefix(partial, limit: 60)
+        .where(_isValidWord)
+        .toList();
+    if (candidates.isEmpty) return [];
+
+    // Ohne Kontext: reine Rank-Reihenfolge
+    if (completedTokens.isEmpty) return candidates.take(defaultLimit).toList();
+
+    EmbeddingService? emb;
+    try { emb = EmbeddingService.instance; } catch (_) {}
+    if (emb == null) return candidates.take(defaultLimit).toList();
+
+    // Kontextvektor = Durchschnitt der letzten 5 abgeschlossenen Tokens
+    final contextVecs = completedTokens.reversed
+        .take(5)
+        .map((t) => emb!.vecFor(NasiraData.normalize(t)))
+        .whereType<Float32List>()
+        .toList();
+    if (contextVecs.isEmpty) return candidates.take(defaultLimit).toList();
+    final contextVec = _avgVec(contextVecs);
+
+    // Kontext-Kategorie: erste Inhaltswort-Kategorie der letzten 5 Tokens
+    // (Funktionswörter wie Kleine_Worte, Pronomen werden übersprungen)
+    final contextCategory = completedTokens.reversed
+        .take(5)
+        .map((t) => _categoryFor(t, data, symbolCache))
+        .firstWhere(
+          (c) =>
+              c != null &&
+              c != 'Sonstiges' &&
+              !_functionWordCategories.contains(c),
+          orElse: () => null,
+        );
+
+    // Score = Kontext-Ähnlichkeit + Frequenz-Rank + Kategorie-Bonus
+    final scored = candidates.map((w) {
+      final wVec = emb!.vecFor(NasiraData.normalize(w.text));
+      final contextSim =
+          wVec != null ? _cosine(contextVec, wVec).clamp(0.0, 1.0) : 0.0;
+      final rankScore = 1.0 / (1.0 + math.log(w.rank.clamp(1, 1000000).toDouble()));
+      final wordCat   = _categoryFor(w.text, data, symbolCache);
+      final catBonus  = (contextCategory != null && wordCat == contextCategory) ? 0.3 : 0.0;
+      return (w, 0.5 * contextSim + 0.2 * rankScore + catBonus);
+    }).toList()
+      ..sort((a, b) => b.$2.compareTo(a.$2));
+
+    return scored.map((s) => s.$1).take(defaultLimit).toList();
+  }
+
+  static Float32List _avgVec(List<Float32List> vecs) {
+    final result = Float32List(300);
+    for (final v in vecs) {
+      for (int i = 0; i < 300; i++) { result[i] += v[i]; }
+    }
+    final n = vecs.length.toDouble();
+    for (int i = 0; i < 300; i++) { result[i] /= n; }
+    return result;
+  }
+
+  static double _cosine(Float32List a, Float32List b) {
+    double dot = 0, na = 0, nb = 0;
+    for (int i = 0; i < a.length; i++) {
+      dot += a[i] * b[i];
+      na += a[i] * a[i];
+      nb += b[i] * b[i];
+    }
+    if (na == 0 || nb == 0) return 0;
+    return dot / math.sqrt(na * nb);
   }
 
   // ── Hilfsmethoden ───────────────────────────────────────────────────

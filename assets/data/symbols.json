@@ -7,6 +7,7 @@
   { "id": "s6", "label": "spielen", "fileName": "spielen.png" },
   { "id": "s7", "label": "bitte", "fileName": "bitte.png" },
   { "id": "s8", "label": "wir", "fileName": "wir.png" },
+  { "id": "s9", "label": "baby", "fileName": "Personen/baby.jpg" },
 
   { "id": "s2001", "label": "später_nutzbar_1", "fileName": "extra_1.png" },
   { "id": "s2002", "label": "später_nutzbar_2", "fileName": "extra_2.png" }

@@ -31,8 +31,7 @@ class SearchLogService {
   }
 
   /// Nur Fehlschläge (kein Treffer).
-  List<SearchResult> get misses =>
-      _log.where((r) => !r.hasMatch).toList();
+  List<SearchResult> get misses => _log.where((r) => !r.hasMatch).toList();
 
   /// Statistik: Wie oft wurde jede Match-Stufe getroffen?
   Map<SearchMatchType, int> get matchTypeStats {
@@ -53,15 +52,13 @@ class SearchLogService {
   int get missCount => _log.where((r) => !r.hasMatch).length;
 
   /// Trefferquote als Prozentwert (0.0 – 100.0).
-  double get hitRate =>
-      _log.isEmpty ? 0.0 : (hitCount / _log.length) * 100.0;
+  double get hitRate => _log.isEmpty ? 0.0 : (hitCount / _log.length) * 100.0;
 
   /// Protokoll leeren.
   void clear() => _log.clear();
 
   /// Zusammenfassung als mehrzeiliger String.
-  String get summary =>
-      'Suchen: $totalCount | '
+  String get summary => 'Suchen: $totalCount | '
       'Treffer: $hitCount | '
       'Fehlschläge: $missCount | '
       'Quote: ${hitRate.toStringAsFixed(1)}%';
