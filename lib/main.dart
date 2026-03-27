@@ -1,11 +1,18 @@
 import 'package:flutter/material.dart';
-import 'nasira_home_page.dart';
+import 'package:provider/provider.dart';
 import 'embedding_service.dart';
+import 'nasira_app_state.dart';
+import 'screens/startseite_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await EmbeddingService.init();
-  runApp(const NasiraApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (_) => NasiraAppState(),
+      child: const NasiraApp(),
+    ),
+  );
 }
 
 class NasiraApp extends StatelessWidget {
@@ -20,7 +27,7 @@ class NasiraApp extends StatelessWidget {
         useMaterial3: true,
         colorSchemeSeed: Colors.indigo,
       ),
-      home: const NasiraHomePage(),
+      home: const StartseiteScreen(),
     );
   }
 }

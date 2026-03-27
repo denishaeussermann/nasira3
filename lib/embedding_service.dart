@@ -11,6 +11,7 @@ class EmbeddingService {
   final Map<String, Float32List> _symbolClean;
   final Map<String, Float32List> _queryVecs;
   final Map<String, String?> _cache = {};
+  final Map<String, List<String>> _neighborCache = {};
 
   /// Vorberechnete semantische Karte: normalisiertes Eingabewort → Symbol-Key.
   /// Wird von build_semantic_map.py generiert (assets/nasira_semantic_map.bin).
@@ -184,6 +185,29 @@ class EmbeddingService {
     }
     _cache[w] = bestKey;
     return bestKey;
+  }
+
+  /// Gibt die [k] semantisch ähnlichsten Symbol-Keys zurück (gecached).
+  /// Wird von der SuggestionEngine für Embedding-Expansion genutzt.
+  List<String> topKNeighbors(String word, {int k = 20, double threshold = 0.45}) {
+    final w = _norm(word);
+    if (!_neighborCache.containsKey(w)) {
+      final vec = vecFor(w);
+      if (vec == null) {
+        _neighborCache[w] = [];
+      } else {
+        final scores = <(String, double)>[];
+        for (final entry in _symbolKeys.entries) {
+          if (entry.key == w) continue;
+          final sim = _cosine(vec, entry.value);
+          if (sim > threshold) scores.add((entry.key, sim));
+        }
+        scores.sort((a, b) => b.$2.compareTo(a.$2));
+        _neighborCache[w] = scores.map((e) => e.$1).toList();
+      }
+    }
+    final cached = _neighborCache[w]!;
+    return cached.length <= k ? cached : cached.sublist(0, k);
   }
 
   Future<String?> findNearestSymbolAsync(String word, {double threshold = 0.35}) async {

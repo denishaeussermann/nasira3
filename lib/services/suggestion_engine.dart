@@ -18,6 +18,16 @@ import '../nasira_import_service.dart';
 class SuggestionEngine {
   static const int defaultLimit = 14;
 
+  // Gecachte normalisierte Wort-Suche: normText → WordEntry.
+  // Wird lazily aus NasiraData aufgebaut, damit die Embedding-Expansion
+  // in O(1) auf WordEntry-Instanzen zugreifen kann.
+  Map<String, WordEntry>? _wordIndex;
+  Map<String, WordEntry> _getWordIndex(NasiraData data) {
+    return _wordIndex ??= {
+      for (final w in data.words) NasiraData.normalize(w.text): w,
+    };
+  }
+
   /// Kategorien, die als Funktionswörter gelten.
   /// Werden bei der Kontext-Kategorie-Erkennung übersprungen,
   /// damit z.B. "gern" nach "essen" nicht die Kategorie bestimmt.
@@ -107,53 +117,47 @@ class SuggestionEngine {
       if (prefixResults.isNotEmpty) return prefixResults;
     }
 
-    // ── Schritt 5: Kategorie-Vorschläge ───────────────────────────
-    // Funktionswörter (Kleine_Worte, Pronomen…) überspringen;
-    // stattdessen das letzte Inhaltswort im Kontext nutzen.
+    // ── Schritt 5+6: nextWord + Kategorie + Embedding-Expansion ──
+    // Die drei Quellen werden kombiniert und dann per Embedding re-ranked,
+    // damit z.B. nach "auto" nicht nur andere Fahrzeuge, sondern auch
+    // semantisch verwandte Wörter wie "fahren", "straße", "parken" erscheinen.
     if (endsWithWhitespace && completedTokens.isNotEmpty) {
-      final contentWord = completedTokens.reversed.firstWhere(
-        (t) {
-          final cat = _categoryFor(t, data, symbolCache);
-          return cat != null &&
-              cat != 'Sonstiges' &&
-              !_functionWordCategories.contains(cat);
-        },
-        orElse: () => '',
-      );
-      if (contentWord.isNotEmpty) {
-        final categoryResults = _categorySuggestions(data, contentWord);
-        if (categoryResults.isNotEmpty) return categoryResults;
-      }
-    }
+      final pool = <WordEntry>{};
 
-    // ── Schritt 6: nextWord nach letztem Token (kontextbewusst) ──
-    if (completedTokens.isNotEmpty) {
-      final nextWords = data
+      // A) nextWord nach letztem Token
+      data
           .nextWordSuggestions(completedTokens.last, limit: defaultLimit + 10)
           .where(_isValidWord)
-          .toList();
+          .forEach(pool.add);
 
-      // Kategorie-Erweiterung: Wörter aus denselben Kategorien wie
-      // die letzten Inhaltswort-Tokens hinzufügen (Funktionswörter überspringen).
-      // So landet z.B. "mausklick" im Pool auch wenn der Corpus
-      // es nicht als Folgewort von "maus" kennt.
-      final categoryPool = <WordEntry>{};
-      int contentTokensAdded = 0;
+      // B) Kategorie-Pool aus den letzten 3 Inhaltswort-Tokens
+      int contentAdded = 0;
       for (final token in completedTokens.reversed) {
-        if (contentTokensAdded >= 3) break;
+        if (contentAdded >= 3) break;
         final cat = _categoryFor(token, data, symbolCache);
         if (cat == null || cat == 'Sonstiges' || _functionWordCategories.contains(cat)) {
           continue;
         }
         data.wordsInSameCategory(token, limit: 30)
             .where(_isValidWord)
-            .forEach(categoryPool.add);
-        contentTokensAdded++;
+            .forEach(pool.add);
+        contentAdded++;
       }
 
-      final combined = <WordEntry>{...nextWords, ...categoryPool}.toList();
-      if (combined.isNotEmpty) {
-        return _reRankByContext(combined, completedTokens, data, symbolCache);
+      // C) Embedding-Expansion: semantisch ähnliche Wörter aus dem
+      // gesamten Vokabular (kategorie-übergreifend, gecached).
+      try {
+        final emb = EmbeddingService.instance;
+        final lastNorm = NasiraData.normalize(completedTokens.last);
+        final index = _getWordIndex(data);
+        for (final key in emb.topKNeighbors(lastNorm)) {
+          final w = index[key];
+          if (w != null && _isValidWord(w)) pool.add(w);
+        }
+      } catch (_) {}
+
+      if (pool.isNotEmpty) {
+        return _reRankByContext(pool.toList(), completedTokens, data, symbolCache);
       }
     }
 
@@ -180,27 +184,6 @@ class SuggestionEngine {
     if (suggestions == null || suggestions.isEmpty) return [];
 
     return _filtered(_wordsFromStrings(data, suggestions, ''));
-  }
-
-  List<WordEntry> _categorySuggestions(NasiraData data, String lastWord) {
-    final catWords = data.wordsInSameCategory(lastWord, limit: 10);
-    if (catWords.isEmpty) return [];
-
-    final general = data
-        .initialSuggestions(limit: 8)
-        .where(_isValidWord)
-        .take(4)
-        .toList();
-
-    final combined = <WordEntry>{};
-    for (final w in catWords) {
-      if (_isValidWord(w)) combined.add(w);
-    }
-    for (final w in general) {
-      combined.add(w);
-    }
-
-    return combined.take(defaultLimit).toList();
   }
 
   // ── Kontextbewusstes Re-Ranking ─────────────────────────────────────
