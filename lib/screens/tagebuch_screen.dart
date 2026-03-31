@@ -1,350 +1,49 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../nasira_app_state.dart';
+import '../models/models.dart';
+import '../services/grid_import_service.dart';
+import '../services/grid_override_service.dart';
 import '../theme/nasira_colors.dart';
+import '../widgets/grid_layout_editor.dart';
 import '../widgets/nasira_grid_cell.dart';
 import '../widgets/nasira_module_header.dart';
 
-// ── Datenmodelle ──────────────────────────────────────────────────────────────
+// ── Hilfsfunktion: Hauptwort für Symbol-Lookup ────────────────────────────────
 
-class TagebuchFachConfig {
-  final String name;
-  final String emoji;
-  final List<String> sentences;
-
-  const TagebuchFachConfig({
-    required this.name,
-    required this.emoji,
-    required this.sentences,
-  });
-}
-
-class TagebuchTagConfig {
-  final String label;
-  final String emoji;
-  final Color color;
-  final List<TagebuchFachConfig> faecher;
-
-  const TagebuchTagConfig({
-    required this.label,
-    required this.emoji,
-    required this.color,
-    required this.faecher,
-  });
-}
-
-// ── Fach-Inhalte ──────────────────────────────────────────────────────────────
-
-const _fachMorgenkreis = TagebuchFachConfig(
-  name: 'Morgenkreis',
-  emoji: '🌅',
-  sentences: [
-    'habe ich gesungen',
-    'haben wir gesungen',
-    'haben wir den Stundenplan gemacht',
-    'haben wir eine Geschichte gehört',
-    'haben wir ein Spiel gespielt',
-    'haben wir Kuchen gegessen',
-    'habe ich vom Wochenende erzählt',
-    'haben wir uns unterhalten',
-    'habe ich von den Ferien erzählt',
-    'haben wir Geburtstag gefeiert',
-    'habe ich vom gestrigen Tag erzählt',
-    'habe ich mit dem Talker erzählt',
-    'wurde mein Mitteilungsbuch vorgelesen',
-  ],
-);
-
-const _fachPause = TagebuchFachConfig(
-  name: 'Pause',
-  emoji: '🔔',
-  sentences: [
-    'war ich in der Pausenecke.',
-    'war ich im Pausenhof.',
-    'war ich in der Pausenhalle.',
-    'war ich beim Tischkicker.',
-    'habe ich mich ausgeruht.',
-    'habe ich mich unterhalten.',
-    'habe ich gefrühstückt.',
-    'habe ich mit der Murmelbahn gespielt.',
-    'war ich in der Schülerbücherei.',
-  ],
-);
-
-const _fachMittagessen = TagebuchFachConfig(
-  name: 'Mittagessen',
-  emoji: '🍽️',
-  sentences: [
-    'Fleisch.',
-    'Nudeln.',
-    'Gemüse.',
-    'Kartoffel.',
-    'Reis.',
-    'Salat.',
-    'Süßes.',
-    'Pommes.',
-    'Maultaschen.',
-    'Spaghetti Bolognese mit Käse.',
-  ],
-);
-
-const _fachKochen = TagebuchFachConfig(
-  name: 'Kochen',
-  emoji: '👨‍🍳',
-  sentences: [
-    'haben wir Suppe gekocht.',
-    'haben wir Kuchen gebacken.',
-    'haben wir Pfannkuchen gemacht.',
-    'haben wir Nudeln gekocht.',
-    'haben wir etwas Leckeres zubereitet.',
-    'habe ich mitgeholfen.',
-    'war ich der Koch / die Köchin.',
-  ],
-);
-
-const _fachMusik = TagebuchFachConfig(
-  name: 'Musik',
-  emoji: '🎵',
-  sentences: [
-    'haben wir gesungen.',
-    'haben wir Instrumente gespielt.',
-    'haben wir Trommeln gespielt.',
-    'haben wir getanzt.',
-    'haben wir ein neues Lied gelernt.',
-    'war es sehr laut.',
-    'hat mir das Singen Spaß gemacht.',
-  ],
-);
-
-const _fachKunst = TagebuchFachConfig(
-  name: 'Kunst',
-  emoji: '🎨',
-  sentences: [
-    'haben wir gemalt.',
-    'haben wir gebastelt.',
-    'haben wir etwas geformt.',
-    'habe ich etwas gebaut.',
-    'war das Thema Farben.',
-    'hat mir das Malen Spaß gemacht.',
-  ],
-);
-
-const _fachMathe = TagebuchFachConfig(
-  name: 'Mathe',
-  emoji: '🔢',
-  sentences: [
-    'haben wir gerechnet.',
-    'haben wir Zahlen geübt.',
-    'war das Thema Addition.',
-    'war das Thema Subtraktion.',
-    'haben wir Aufgaben gelöst.',
-    'war es schwer.',
-    'war es leicht.',
-  ],
-);
-
-const _fachSport = TagebuchFachConfig(
-  name: 'Sport',
-  emoji: '⚽',
-  sentences: [
-    'haben wir Fußball gespielt.',
-    'haben wir Basketball gespielt.',
-    'haben wir Tischtennis gespielt.',
-    'haben wir getanzt.',
-    'haben wir Yoga gemacht.',
-    'bin ich gelaufen.',
-    'hat mir Sport viel Spaß gemacht.',
-  ],
-);
-
-const _fachReiten = TagebuchFachConfig(
-  name: 'Reiten',
-  emoji: '🐴',
-  sentences: [
-    'war ich auf dem Pferd.',
-    'habe ich das Pferd gebürstet.',
-    'haben wir im Schritt geritten.',
-    'haben wir im Trab geritten.',
-    'war mein Pferd brav.',
-    'hatte ich keine Angst.',
-    'hat mir das Reiten viel Spaß gemacht.',
-  ],
-);
-
-const _fachSchwimmen = TagebuchFachConfig(
-  name: 'Schwimmen',
-  emoji: '🏊',
-  sentences: [
-    'bin ich geschwommen.',
-    'war das Wasser kalt.',
-    'war das Wasser warm.',
-    'habe ich geübt.',
-    'hat mir das Schwimmen Spaß gemacht.',
-  ],
-);
-
-const _fachReligion = TagebuchFachConfig(
-  name: 'Religion',
-  emoji: '✝️',
-  sentences: [
-    'haben wir eine Geschichte gehört.',
-    'haben wir über Gott gesprochen.',
-    'haben wir gesungen.',
-    'haben wir gebetet.',
-    'war das Thema interessant.',
-  ],
-);
-
-const _fachSprachtherapie = TagebuchFachConfig(
-  name: 'Sprachtherapie',
-  emoji: '🗣️',
-  sentences: [
-    'haben wir Übungen gemacht.',
-    'habe ich mit dem Talker geübt.',
-    'habe ich Laute geübt.',
-    'war es anstrengend.',
-    'hat mir die Übung gut gefallen.',
-  ],
-);
-
-const _fachComputer = TagebuchFachConfig(
-  name: 'Computer',
-  emoji: '💻',
-  sentences: [
-    'habe ich gespielt.',
-    'habe ich gemalt.',
-    'habe ich etwas geschrieben.',
-    'habe ich etwas gelernt.',
-    'war das Programm toll.',
-    'hat mir der Computer Spaß gemacht.',
-  ],
-);
-
-const _alleFaecher = [
-  _fachMorgenkreis,
-  _fachPause,
-  _fachMittagessen,
-  _fachComputer,
-  _fachKochen,
-  _fachMusik,
-  _fachKunst,
-  _fachMathe,
-  _fachSport,
-  _fachReiten,
-  _fachSchwimmen,
-  _fachReligion,
-  _fachSprachtherapie,
-];
-
-// ── Stundenplan pro Tag ───────────────────────────────────────────────────────
-
-const _stundenplanMontag = [
-  _fachMorgenkreis, _fachComputer, _fachPause, _fachMittagessen,
-];
-const _stundenplanDienstag = [
-  _fachMorgenkreis, _fachMusik, _fachPause, _fachMittagessen,
-];
-const _stundenplanMittwoch = [
-  _fachMorgenkreis, _fachKunst, _fachPause, _fachMittagessen,
-];
-const _stundenplanDonnerstag = [
-  _fachMorgenkreis, _fachSport, _fachPause, _fachMittagessen,
-];
-const _stundenplanFreitag = [
-  _fachMorgenkreis, _fachKochen, _fachPause, _fachMittagessen,
-];
-const _stundenplanWochenende = [
-  _fachSport, _fachMusik, _fachKunst,
-];
-
-// ── Wochentage ────────────────────────────────────────────────────────────────
-
-const _wochentage = [
-  TagebuchTagConfig(
-    label: 'Montag',
-    emoji: '📅',
-    color: NasiraColors.tagMontag,
-    faecher: _stundenplanMontag,
-  ),
-  TagebuchTagConfig(
-    label: 'Dienstag',
-    emoji: '📅',
-    color: NasiraColors.tagDienstag,
-    faecher: _stundenplanDienstag,
-  ),
-  TagebuchTagConfig(
-    label: 'Mittwoch',
-    emoji: '📅',
-    color: NasiraColors.tagMittwoch,
-    faecher: _stundenplanMittwoch,
-  ),
-  TagebuchTagConfig(
-    label: 'Donnerstag',
-    emoji: '📅',
-    color: NasiraColors.tagDonnerstag,
-    faecher: _stundenplanDonnerstag,
-  ),
-  TagebuchTagConfig(
-    label: 'Freitag',
-    emoji: '📅',
-    color: NasiraColors.tagFreitag,
-    faecher: _stundenplanFreitag,
-  ),
-  TagebuchTagConfig(
-    label: 'Samstag',
-    emoji: '🌤️',
-    color: NasiraColors.tagSamstag,
-    faecher: _stundenplanWochenende,
-  ),
-  TagebuchTagConfig(
-    label: 'Sonntag',
-    emoji: '☀️',
-    color: NasiraColors.tagSonntag,
-    faecher: _stundenplanWochenende,
-  ),
-  TagebuchTagConfig(
-    label: 'Am Wochenende',
-    emoji: '🏖️',
-    color: NasiraColors.tagWochenende,
-    faecher: _stundenplanWochenende,
-  ),
-  TagebuchTagConfig(
-    label: 'In den Ferien',
-    emoji: '🌴',
-    color: NasiraColors.tagFerien,
-    faecher: _stundenplanWochenende,
-  ),
-];
-
-// ── Hilfsfunktion: Inhaltswort für Symbol-Lookup ──────────────────────────────
-
-/// Extrahiert das erste bedeutungstragende Wort aus einem Tagebuch-Satz.
-/// Beispiel: "haben wir Fußball gespielt." → "Fußball"
 String _keyWord(String sentence) {
   const skip = {
-    'habe', 'haben', 'hatte', 'hatten', 'bin', 'ist', 'war', 'waren',
-    'ich', 'wir', 'du', 'er', 'sie', 'es',
+    'ich', 'du', 'er', 'sie', 'es', 'wir', 'ihr',
+    'mir', 'mich', 'dir', 'dich', 'ihn', 'uns', 'euch',
+    'habe', 'haben', 'hat', 'hatte', 'bin', 'ist', 'war', 'sind', 'waren',
     'ein', 'eine', 'einen', 'einem', 'einer',
     'der', 'die', 'das', 'den', 'dem', 'des',
-    'in', 'im', 'am', 'an', 'auf', 'bei', 'für', 'mit', 'von', 'zu', 'zum', 'zur',
-    'und', 'oder', 'nicht', 'auch', 'mir', 'uns', 'mich', 'mein', 'meine',
-    'sehr', 'viel', 'keine', 'kein', 'keinen',
+    'für', 'mit', 'von', 'zu', 'zum', 'zur', 'in', 'im', 'am', 'an', 'auf', 'bei',
+    'und', 'oder', 'aber', 'nicht', 'auch', 'sehr', 'viel',
+    'mein', 'meine', 'meinen', 'meinem', 'dein', 'deinen', 'deiner',
+    'schon', 'noch', 'mal', 'immer', 'bald', 'wieder',
   };
   final words = sentence
       .replaceAll(RegExp(r'[.!?,;]'), '')
       .split(' ')
+      .where((w) => w.isNotEmpty)
+      .toList();
+  if (words.isEmpty) return sentence;
+  final nouns = words.length > 1
+      ? words
+          .skip(1)
+          .where((w) =>
+              w.length >= 3 &&
+              w[0] == w[0].toUpperCase() &&
+              !skip.contains(w.toLowerCase()))
+          .toList()
+      : <String>[];
+  if (nouns.isNotEmpty) return nouns.last;
+  final content = words
       .where((w) => w.length >= 3 && !skip.contains(w.toLowerCase()))
       .toList();
-  if (words.isEmpty) {
-    final parts = sentence.trim().split(' ');
-    return parts.last.replaceAll(RegExp(r'[.!?,;]'), '');
-  }
-  return words.first;
+  return content.isEmpty ? words.last : content.last;
 }
-
-// ── Schritte ──────────────────────────────────────────────────────────────────
-
-enum _TagebuchSchritt { wochentage, stundenplan, fach }
 
 // ── Hauptscreen ───────────────────────────────────────────────────────────────
 
@@ -356,182 +55,400 @@ class TagebuchScreen extends StatefulWidget {
 }
 
 class _TagebuchScreenState extends State<TagebuchScreen> {
-  _TagebuchSchritt _schritt = _TagebuchSchritt.wochentage;
-  int? _selectedTag;
-  int? _selectedFach;
-  bool _alleFaecherAnzeigen = false;
+  static const _startPage = 'Tagebuch 1 Wochentage 3x6';
 
-  // ── Navigation ──────────────────────────────────────────────────────────
+  // ── Navigations-Stack (Seitenname-basiert, kein Enum) ──────────────────────
+  final List<String> _navStack = [];
+  String _currentPageName = _startPage;
 
-  void _zurueck() {
-    switch (_schritt) {
-      case _TagebuchSchritt.wochentage:
-        Navigator.pop(context);
-      case _TagebuchSchritt.stundenplan:
-        setState(() {
-          _schritt = _TagebuchSchritt.wochentage;
-          _alleFaecherAnzeigen = false;
-        });
-      case _TagebuchSchritt.fach:
-        setState(() => _schritt = _TagebuchSchritt.stundenplan);
+  // ── Geladene Seiten (Lazy-Cache: wird bei Navigation befüllt) ──────────────
+  final Map<String, GridPage> _rawPages = {}; // Rohe Seiten (nie überschrieben)
+  final Map<String, GridPage> _pages = {};    // Override-angewendete Seiten
+  int _wlPage = 0;
+
+  // ── Editor ─────────────────────────────────────────────────────────────────
+  bool _editorOpen = false;
+  final _overrideService = GridOverrideService();
+  final _importSvc = GridImportService();
+
+  // ── Initialisierung ────────────────────────────────────────────────────────
+
+  @override
+  void initState() {
+    super.initState();
+    _ensurePage(_startPage);
+    _overrideService.load().then((_) {
+      if (mounted) setState(_refreshAllPages);
+    });
+  }
+
+  /// Lädt eine Seite (falls noch nicht im Cache) und wendet Overrides an.
+  GridPage? _ensurePage(String name) {
+    if (_pages.containsKey(name)) return _pages[name];
+    final raw = _importSvc.importPageSync(name);
+    if (raw == null) {
+      debugPrint('[Tagebuch] Seite nicht gefunden: $name');
+      return null;
+    }
+    _rawPages[name] = raw;
+    _pages[name] = _applyOverrideTo(name, raw);
+    return _pages[name];
+  }
+
+  /// Wendet Overrides auf alle bereits gecachten Seiten neu an (nach Speichern).
+  void _refreshAllPages() {
+    for (final name in _pages.keys.toList()) {
+      final raw = _importSvc.importPageSync(name);
+      if (raw != null) _pages[name] = _applyOverrideTo(name, raw);
     }
   }
 
-  void _tagGewaehlt(int index) {
-    final tag = _wochentage[index];
-    context.read<NasiraAppState>().insertPhrase(tag.label);
+  /// Mischt GridOverrideService-Daten in eine rohe [GridPage].
+  GridPage _applyOverrideTo(String name, GridPage raw) {
+    final wl       = _overrideService.getWordList(name);
+    final cellOv   = _overrideService.getAllCellOverrides(name);
+    final layoutOv = _overrideService.getLayoutOverrides(name);
+    final sizeOv   = _overrideService.getGridSize(name);
+
+    final hasCellOv   = cellOv   != null && cellOv.isNotEmpty;
+    final hasLayoutOv = layoutOv != null && layoutOv.isNotEmpty;
+
+    if (wl == null && !hasCellOv && !hasLayoutOv && sizeOv == null) return raw;
+
+    final cells = raw.cells.map((c) {
+      final key = '${c.x},${c.y}';
+      final cOv = hasCellOv   ? cellOv[key]   : null;
+      final lOv = hasLayoutOv ? layoutOv[key] : null;
+      if (cOv == null && lOv == null) return c;
+      return GridCell(
+        x:              lOv?['x']        ?? c.x,
+        y:              lOv?['y']        ?? c.y,
+        colSpan:        lOv?['colSpan']  ?? c.colSpan,
+        rowSpan:        lOv?['rowSpan']  ?? c.rowSpan,
+        caption:        (cOv?['caption']    as String?) ?? c.caption,
+        symbolStem:     (cOv?['symbolStem'] as String?) ?? c.symbolStem,
+        symbolCategory: c.symbolCategory,
+        metacmPath:     c.metacmPath,
+        localImagePath: c.localImagePath,
+        iconData:       c.iconData,
+        style:          c.style,
+        type:           c.type,
+        commands:       c.commands,
+      );
+    }).toList();
+
+    return GridPage(
+      name:            raw.name,
+      columns:         sizeOv?['columns'] ?? raw.columns,
+      rows:            sizeOv?['rows']    ?? raw.rows,
+      backgroundColor: raw.backgroundColor,
+      cells:           cells,
+      wordList:        wl ?? raw.wordList,
+    );
+  }
+
+  // ── Navigation ──────────────────────────────────────────────────────────────
+
+  void _navigateTo(String pageName) {
+    _ensurePage(pageName);
     setState(() {
-      _selectedTag = index;
-      _schritt = _TagebuchSchritt.stundenplan;
+      _navStack.add(_currentPageName);
+      _currentPageName = pageName;
+      _wlPage = 0;
     });
   }
 
-  void _fachGewaehlt(int index, TagebuchFachConfig fach) {
-    context.read<NasiraAppState>().insertPhrase(fach.name);
-    setState(() {
-      _selectedFach = index;
-      _schritt = _TagebuchSchritt.fach;
-    });
+  void _zurueck() {
+    if (_navStack.isNotEmpty) {
+      setState(() {
+        _currentPageName = _navStack.removeLast();
+        _wlPage = 0;
+      });
+    } else {
+      Navigator.pop(context);
+    }
   }
 
-  void _satzGewaehlt(String satz) {
-    context.read<NasiraAppState>().insertPhrase(satz);
+  // ── Symbol-Auflösung ────────────────────────────────────────────────────────
+
+  String? _resolveSymbol(NasiraAppState state, String? stem) {
+    if (stem == null) return null;
+    if (!state.assetResolver.isReady) return null;
+    return state.assetResolver.resolve('$stem.jpg');
   }
 
-  // ── Build ───────────────────────────────────────────────────────────────
+  // ── Build ───────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<NasiraAppState>();
+    final page  = _pages[_currentPageName];
 
+    // ── Editor-Modus ─────────────────────────────────────────────────────────
+    if (_editorOpen && page != null) {
+      Map<String, GridWordListItem> autoMap = {};
+      final autoSlots = page.cells
+          .where((c) => c.type == GridCellType.autoContent)
+          .toList()
+        ..sort((a, b) => a.y != b.y ? a.y.compareTo(b.y) : a.x.compareTo(b.x));
+      for (int i = 0; i < autoSlots.length && i < page.wordList.length; i++) {
+        autoMap['${autoSlots[i].x},${autoSlots[i].y}'] = page.wordList[i];
+      }
+
+      return Scaffold(
+        backgroundColor: NasiraColors.briefBg,
+        body: SafeArea(
+          child: GridLayoutEditor(
+            page:            page,
+            rawPage:         _rawPages[_currentPageName],
+            pageName:        _currentPageName,
+            pageColor:       page.backgroundColor,
+            overrideService: _overrideService,
+            cellBuilder: (cell) {
+              final wlItem = autoMap['${cell.x},${cell.y}'];
+              if (wlItem != null) return _buildWordItem(state, wlItem);
+              return _buildCellForEditor(state, cell);
+            },
+            onDismiss: () => setState(() => _editorOpen = false),
+            onChanged: () => setState(() {
+              _refreshAllPages();
+              _wlPage = 0;
+            }),
+          ),
+        ),
+      );
+    }
+
+    // ── Normal-Modus ─────────────────────────────────────────────────────────
     return Scaffold(
       backgroundColor: NasiraColors.briefBg,
       body: SafeArea(
         child: Column(
           children: [
             NasiraModuleHeader(
-              controller: state.textController,
+              controller:  state.textController,
               accentColor: NasiraColors.navGreen,
-              onBack: _zurueck,
+              onBack:      _zurueck,
+              onMenu:      page != null
+                  ? () => setState(() => _editorOpen = true)
+                  : null,
             ),
-
-            // Step content
-            Expanded(child: _buildSchritt()),
+            Expanded(
+              child: page != null
+                  ? _buildExactGrid(state, page)
+                  : const Center(child: CircularProgressIndicator()),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildSchritt() {
-    return switch (_schritt) {
-      _TagebuchSchritt.wochentage => _buildWochentage(),
-      _TagebuchSchritt.stundenplan => _buildStundenplan(),
-      _TagebuchSchritt.fach => _buildFach(),
-    };
-  }
+  // ── Grid-Rendering (identisch zu BriefScreen) ────────────────────────────
 
-  // ── Schritt 1: Wochentage ──────────────────────────────────────────────
+  /// Stack-basiertes Grid: Workspace-Zeile überspringen, Rest exakt positionieren.
+  Widget _buildExactGrid(NasiraAppState state, GridPage page) {
+    final wsCell = page.cells
+        .where((c) => c.type == GridCellType.workspace)
+        .firstOrNull;
+    final firstContent = wsCell != null ? wsCell.y + wsCell.rowSpan : 0;
+    final contentRows  = page.rows - firstContent;
+    if (contentRows <= 0) return const SizedBox.shrink();
 
-  Widget _buildWochentage() {
-    return Padding(
-      padding: const EdgeInsets.all(10),
-      child: GridView.builder(
-        itemCount: _wochentage.length,
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 180,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-          childAspectRatio: 1.0,
-        ),
-        itemBuilder: (context, i) {
-          final tag = _wochentage[i];
-          return NasiraGridCell(
-            backgroundColor: tag.color,
-            caption: tag.label,
-            symbolWord: tag.label,
-            onTap: () => _tagGewaehlt(i),
-          );
-        },
-      ),
-    );
-  }
+    final contentCells = page.cells
+        .where((c) => c.type != GridCellType.workspace && c.y >= firstContent)
+        .toList();
 
-  // ── Schritt 2: Stundenplan ─────────────────────────────────────────────
+    final autoContent = contentCells
+        .where((c) => c.type == GridCellType.autoContent)
+        .toList()
+      ..sort((a, b) => a.y != b.y ? a.y.compareTo(b.y) : a.x.compareTo(b.x));
 
-  Widget _buildStundenplan() {
-    final tag = _wochentage[_selectedTag!];
-    final liste = _alleFaecherAnzeigen ? _alleFaecher : tag.faecher;
+    final regularCells = contentCells
+        .where((c) => c.type != GridCellType.autoContent)
+        .toList();
 
-    return Padding(
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        children: [
-          Expanded(
-            child: GridView.builder(
-              itemCount: liste.length,
-              gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-                maxCrossAxisExtent: 140,
-                crossAxisSpacing: 8,
-                mainAxisSpacing: 8,
-                childAspectRatio: 0.9,
-              ),
-              itemBuilder: (context, i) {
-                final fach = liste[i];
-                return NasiraGridCell(
-                  backgroundColor: NasiraColors.moduleGreen,
-                  caption: '${fach.name} ${fach.emoji}',
-                  symbolWord: fach.name,
-                  onTap: () => _fachGewaehlt(i, fach),
-                );
-              },
+    const gap = 3.0;
+
+    return Container(
+      color: page.backgroundColor,
+      child: LayoutBuilder(builder: (ctx, box) {
+        final cellW = box.maxWidth  / page.columns;
+        final cellH = box.maxHeight / contentRows;
+
+        return Stack(children: [
+          for (final cell in regularCells)
+            Positioned(
+              left:   cell.x * cellW + gap / 2,
+              top:    (cell.y - firstContent) * cellH + gap / 2,
+              width:  cell.colSpan * cellW - gap,
+              height: cell.rowSpan * cellH - gap,
+              child:  _buildRegularCell(state, cell, page, autoContent.length),
             ),
-          ),
-          if (!_alleFaecherAnzeigen) ...[
-            const SizedBox(height: 8),
-            SizedBox(
-              width: double.infinity,
-              child: OutlinedButton.icon(
-                onPressed: () =>
-                    setState(() => _alleFaecherAnzeigen = true),
-                icon: const Icon(Icons.apps),
-                label: const Text('Alle Fächer anzeigen'),
-              ),
-            ),
-            const SizedBox(height: 4),
-          ],
-        ],
+          for (int i = 0; i < autoContent.length; i++)
+            Builder(builder: (_) {
+              final cell  = autoContent[i];
+              final wlIdx = _wlPage * autoContent.length + i;
+              final item  = wlIdx < page.wordList.length
+                  ? page.wordList[wlIdx]
+                  : null;
+              return Positioned(
+                left:   cell.x * cellW + gap / 2,
+                top:    (cell.y - firstContent) * cellH + gap / 2,
+                width:  cell.colSpan * cellW - gap,
+                height: cell.rowSpan * cellH - gap,
+                child:  item != null
+                    ? _buildWordItem(state, item)
+                    : _buildEmptyAutoSlot(),
+              );
+            }),
+        ]);
+      }),
+    );
+  }
+
+  Widget _buildRegularCell(
+    NasiraAppState state,
+    GridCell cell,
+    GridPage page,
+    int acCount,
+  ) {
+    VoidCallback? onTap;
+
+    if (cell.isDeleteWord) {
+      onTap = state.deleteLastWord;
+    } else if (cell.isBack) {
+      onTap = _zurueck;
+    } else if (cell.isHome) {
+      onTap = () => Navigator.popUntil(context, (r) => r.isFirst);
+    } else if (cell.isMoreWords) {
+      onTap = () => setState(() {
+        if (acCount > 0) {
+          final totalPages = (page.wordList.length / acCount).ceil();
+          if (totalPages > 1) _wlPage = (_wlPage + 1) % totalPages;
+        }
+      });
+    } else if (cell.isInsertCell && cell.isNavigation) {
+      // Tagebuch-Kacheln: Text einfügen UND zur nächsten Seite navigieren.
+      final target = cell.jumpTarget!;
+      onTap = () {
+        state.insertPhrase(cell.insertText!);
+        _navigateTo(target);
+      };
+    } else if (cell.isInsertCell) {
+      onTap = () => state.insertPhrase(cell.insertText!);
+    } else if (cell.isPunctuation) {
+      onTap = () => state.insertPhrase(cell.punctuationChar!);
+    } else if (cell.isNavigation) {
+      final target = cell.jumpTarget;
+      if (target != null) onTap = () => _navigateTo(target);
+    }
+
+    final displayCaption = cell.caption?.isNotEmpty == true
+        ? cell.caption
+        : cell.insertText?.trim();
+    final useLocalPng = cell.localImagePath != null;
+    final resolvedAssetPath = useLocalPng ? null : _resolveSymbol(state, cell.symbolStem);
+    final fallbackWord = (useLocalPng || resolvedAssetPath != null) ? null :
+        cell.symbolStem ??
+        (cell.insertText != null
+            ? _keyWord(cell.insertText!)
+            : (displayCaption?.isNotEmpty == true
+                ? _keyWord(displayCaption!)
+                : null));
+
+    final inner = NasiraGridCell(
+      caption:         displayCaption,
+      fileImagePath:   cell.localImagePath,
+      assetPath:       resolvedAssetPath,
+      symbolWord:      fallbackWord,
+      icon:            cell.iconData,
+      backgroundColor: cell.backgroundColor,
+      textColor:       cell.foregroundColor,
+      fontSize:        cell.style.isOval ? 12 : 11,
+      onTap:           onTap,
+      borderRadius:    cell.style.isOval ? 100 : 7,
+    );
+
+    if (cell.hasBorder) {
+      return Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: NasiraColors.briefBorder, width: 1.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: inner,
+      );
+    }
+    return inner;
+  }
+
+  Widget _buildWordItem(NasiraAppState state, GridWordListItem item) {
+    final useCustomPng = item.localImagePath != null && item.metacmPath == null;
+    final resolvedPath = useCustomPng ? null : _resolveSymbol(state, item.symbolStem);
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: NasiraColors.briefBorder, width: 1.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: NasiraGridCell(
+        caption:       item.text,
+        fileImagePath: useCustomPng ? item.localImagePath : null,
+        assetPath:     resolvedPath,
+        symbolWord:    (useCustomPng || resolvedPath != null)
+            ? null
+            : _keyWord(item.text),
+        backgroundColor: Colors.white,
+        textColor:       NasiraColors.textDark,
+        fontSize:        11,
+        elevation:       0,
+        borderRadius:    6,
+        onTap: () => state.insertPhrase(item.text),
       ),
     );
   }
 
-  // ── Schritt 3: Fach (Sätze) ────────────────────────────────────────────
-
-  Widget _buildFach() {
-    final tag = _wochentage[_selectedTag!];
-    final liste = _alleFaecherAnzeigen ? _alleFaecher : tag.faecher;
-    final fach = liste[_selectedFach!];
-
-    return Padding(
-      padding: const EdgeInsets.all(10),
-      child: GridView.builder(
-        itemCount: fach.sentences.length,
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 200,
-          crossAxisSpacing: 8,
-          mainAxisSpacing: 8,
-          childAspectRatio: 2.0,
+  Widget _buildEmptyAutoSlot() => Container(
+        decoration: BoxDecoration(
+          color:        NasiraColors.briefBg,
+          borderRadius: BorderRadius.circular(8),
         ),
-        itemBuilder: (context, i) {
-          final satz = fach.sentences[i];
-          return NasiraGridCell(
-            backgroundColor: NasiraColors.briefSentence,
-            caption: satz,
-            symbolWord: _keyWord(satz),
-            onTap: () => _satzGewaehlt(satz),
-          );
-        },
-      ),
+      );
+
+  Widget _buildCellForEditor(NasiraAppState state, GridCell cell) {
+    final displayCaption = cell.caption?.isNotEmpty == true
+        ? cell.caption
+        : cell.insertText?.trim();
+    final useLocalPng = cell.localImagePath != null;
+    final resolvedAssetPath = useLocalPng ? null : _resolveSymbol(state, cell.symbolStem);
+    final fallbackWord = (useLocalPng || resolvedAssetPath != null) ? null :
+        cell.symbolStem ??
+        (cell.insertText != null
+            ? _keyWord(cell.insertText!)
+            : (displayCaption?.isNotEmpty == true
+                ? _keyWord(displayCaption!)
+                : null));
+
+    final inner = NasiraGridCell(
+      caption:         displayCaption,
+      fileImagePath:   cell.localImagePath,
+      assetPath:       resolvedAssetPath,
+      symbolWord:      fallbackWord,
+      backgroundColor: cell.backgroundColor,
+      textColor:       cell.foregroundColor,
+      fontSize:        cell.style.isOval ? 12 : 11,
+      borderRadius:    cell.style.isOval ? 100 : 7,
     );
+
+    if (cell.hasBorder) {
+      return Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: NasiraColors.briefBorder, width: 1.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: inner,
+      );
+    }
+    return inner;
   }
 }

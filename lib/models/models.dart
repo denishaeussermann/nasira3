@@ -13,3 +13,4 @@ export 'mapped_symbol.dart';
 export 'search_result.dart';
 export 'nasira_data.dart';
 export 'custom_sentence.dart';
+export 'grid_page.dart';

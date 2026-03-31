@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../nasira_app_state.dart';
@@ -13,6 +15,8 @@ class NasiraGridCell extends StatelessWidget {
   final String? caption;
   final String? symbolWord;
   final String? assetPath;
+  /// Absoluter Dateisystem-Pfad zu einer Custom-PNG (z.B. aus Grid3-Export).
+  final String? fileImagePath;
   final IconData? icon;
   final Color backgroundColor;
   final Color textColor;
@@ -26,6 +30,7 @@ class NasiraGridCell extends StatelessWidget {
     this.caption,
     this.symbolWord,
     this.assetPath,
+    this.fileImagePath,
     this.icon,
     this.backgroundColor = NasiraColors.navGreen,
     this.textColor = Colors.white,
@@ -40,6 +45,7 @@ class NasiraGridCell extends StatelessWidget {
     return Material(
       color: backgroundColor,
       borderRadius: BorderRadius.circular(borderRadius),
+      clipBehavior: Clip.antiAlias,
       elevation: elevation ?? 2,
       child: InkWell(
         borderRadius: BorderRadius.circular(borderRadius),
@@ -77,9 +83,18 @@ class NasiraGridCell extends StatelessWidget {
   }
 
   bool get _hasVisual =>
-      symbolWord != null || assetPath != null || icon != null;
+      symbolWord != null || assetPath != null || fileImagePath != null || icon != null;
 
   Widget _buildVisual(BuildContext context) {
+    // Custom-PNG vom Dateisystem (z.B. Grid3 wordlist-N-0.png)
+    if (fileImagePath != null) {
+      return Image.file(
+        File(fileImagePath!),
+        fit: BoxFit.contain,
+        errorBuilder: (_, __, ___) => _iconOrEmpty(),
+      );
+    }
+
     // Direkter Asset-Pfad
     if (assetPath != null) {
       return Image.asset(

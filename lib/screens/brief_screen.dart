@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../nasira_app_state.dart';
+import '../models/grid_page.dart';
+import '../services/grid_import_service.dart';
+import '../services/grid_override_service.dart';
 import '../theme/nasira_colors.dart';
+import '../widgets/grid_layout_editor.dart';
+import '../widgets/grid_page_editor_sheet.dart';
 import '../widgets/nasira_grid_cell.dart';
 import '../widgets/nasira_module_header.dart';
 import 'freies_schreiben_screen.dart';
 
 // ── Hilfsfunktion: Hauptwort für Symbol-Lookup ────────────────────────────────
 
-/// Extrahiert das wichtigste Substantiv aus einem deutschen Satz.
-/// Bevorzugt das letzte großgeschriebene Wort (= Nomen), das kein Stoppwort ist.
 String _keyWord(String sentence) {
   const skip = {
     'ich', 'du', 'er', 'sie', 'es', 'wir', 'ihr',
@@ -20,8 +23,7 @@ String _keyWord(String sentence) {
     'für', 'mit', 'von', 'zu', 'zum', 'zur', 'in', 'im', 'am', 'an', 'auf', 'bei',
     'und', 'oder', 'aber', 'nicht', 'auch', 'sehr', 'viel',
     'mein', 'meine', 'meinen', 'meinem', 'dein', 'deinen', 'deiner',
-    'schon', 'noch', 'mal', 'immer', 'bald', 'wieder', 'lang', 'lange',
-    'letzten', 'letzte', 'letzter',
+    'schon', 'noch', 'mal', 'immer', 'bald', 'wieder',
   };
 
   final words = sentence
@@ -49,365 +51,6 @@ String _keyWord(String sentence) {
       .toList();
   return content.isEmpty ? words.last : content.last;
 }
-
-// ── Datenmodelle ──────────────────────────────────────────────────────────────
-
-class BriefWortItem {
-  final String text;
-  final String? symbolWord;   // expliziter Lookup-Override für Mehrwort-Einträge
-  const BriefWortItem(this.text, {this.symbolWord});
-}
-
-class BriefPhraseButton {
-  final String label;
-  final String insertText;
-  const BriefPhraseButton(this.label, this.insertText);
-}
-
-class BriefThemaConfig {
-  final String name;
-  final String leitfrage;
-  final List<BriefWortItem> woerter;
-  final List<BriefPhraseButton> phraseButtons;
-
-  const BriefThemaConfig({
-    required this.name,
-    required this.leitfrage,
-    required this.woerter,
-    required this.phraseButtons,
-  });
-}
-
-// ── Thema-Inhalte (aus den Grid-XMLs) ─────────────────────────────────────────
-
-const _themenGefuehle = BriefThemaConfig(
-  name: 'Gefühle',
-  leitfrage: 'Wie hast du dich gefühlt?',
-  woerter: [
-    BriefWortItem('glücklich'), BriefWortItem('traurig'),
-    BriefWortItem('wütend'),   BriefWortItem('ruhig'),
-    BriefWortItem('super'),    BriefWortItem('verliebt'),
-    BriefWortItem('mutig'),    BriefWortItem('genervt'),
-    BriefWortItem('einsam'),   BriefWortItem('ängstlich'),
-    BriefWortItem('stolz'),    BriefWortItem('enttäuscht'),
-    BriefWortItem('schüchtern'), BriefWortItem('verlegen'),
-    BriefWortItem('besorgt'),  BriefWortItem('ok'),
-    BriefWortItem('krank'),    BriefWortItem('schlecht gelaunt', symbolWord: 'schlecht'),
-  ],
-  phraseButtons: [
-    BriefPhraseButton('Ich bin', 'Ich bin'),
-    BriefPhraseButton('Ich war', 'Ich war'),
-    BriefPhraseButton('Bist du', 'Bist du'),
-    BriefPhraseButton('Warst du', 'Warst du'),
-  ],
-);
-
-const _themenEssen = BriefThemaConfig(
-  name: 'Essen',
-  leitfrage: 'Was hast du gegessen?',
-  woerter: [
-    BriefWortItem('Pizza'),      BriefWortItem('Burger'),
-    BriefWortItem('Nudeln'),     BriefWortItem('Reis'),
-    BriefWortItem('Salat'),      BriefWortItem('Suppe'),
-    BriefWortItem('Kuchen'),     BriefWortItem('Eis'),
-    BriefWortItem('Schokolade'), BriefWortItem('Fisch'),
-    BriefWortItem('Gemüse'),     BriefWortItem('Kartoffeln'),
-    BriefWortItem('Pfannkuchen'),BriefWortItem('Joghurt'),
-    BriefWortItem('Obst'),       BriefWortItem('Süßigkeiten'),
-  ],
-  phraseButtons: [
-    BriefPhraseButton('Ich mag', 'Ich mag'),
-    BriefPhraseButton('Heute gibt es', 'Heute gibt es'),
-    BriefPhraseButton('Magst du', 'Magst du'),
-  ],
-);
-
-const _themenTrinken = BriefThemaConfig(
-  name: 'Trinken',
-  leitfrage: 'Was trinkst du gerne?',
-  woerter: [
-    BriefWortItem('Tee'),
-    BriefWortItem('Kaffee'),
-    BriefWortItem('Kakao'),
-    BriefWortItem('Wasser'),
-    BriefWortItem('Apfelsaft',    symbolWord: 'Apfel'),
-    BriefWortItem('Orangensaft',  symbolWord: 'Orange'),
-    BriefWortItem('Saft'),
-    BriefWortItem('Milch'),
-    BriefWortItem('Cola'),
-    BriefWortItem('Eistee',       symbolWord: 'Tee'),
-  ],
-  phraseButtons: [
-    BriefPhraseButton('Heute gibt es', 'Heute gibt es'),
-    BriefPhraseButton('Ich mag', 'Ich mag'),
-    BriefPhraseButton('Magst du', 'Magst du'),
-  ],
-);
-
-const _themenSchule = BriefThemaConfig(
-  name: 'Schule',
-  leitfrage: 'Wie war die Schule?',
-  woerter: [
-    BriefWortItem('spannend'),
-    BriefWortItem('langweilig'),
-    BriefWortItem('super'),
-    BriefWortItem('toll'),
-    BriefWortItem('wie immer', symbolWord: 'immer'),
-  ],
-  phraseButtons: [
-    BriefPhraseButton('In der Schule', 'In der Schule'),
-    BriefPhraseButton('Wie war es in der Schule?', 'Wie war es in der Schule?'),
-    BriefPhraseButton('war es', 'war es'),
-    BriefPhraseButton('ist es', 'ist es'),
-  ],
-);
-
-const _themenWetter = BriefThemaConfig(
-  name: 'Wetter',
-  leitfrage: 'Wie war das Wetter?',
-  woerter: [
-    BriefWortItem('scheint die Sonne',   symbolWord: 'Sonne'),
-    BriefWortItem('regnet es',           symbolWord: 'Regen'),
-    BriefWortItem('ist ein Gewitter',    symbolWord: 'Gewitter'),
-    BriefWortItem('stürmt es',           symbolWord: 'Sturm'),
-    BriefWortItem('schneit es',          symbolWord: 'Schnee'),
-    BriefWortItem('hat es viel Schnee',  symbolWord: 'Schnee'),
-    BriefWortItem('hagelt es',           symbolWord: 'Hagel'),
-    BriefWortItem('hat es Frost',        symbolWord: 'Frost'),
-  ],
-  phraseButtons: [
-    BriefPhraseButton('Bei uns', 'Bei uns'),
-    BriefPhraseButton('Das Wetter soll', 'Das Wetter soll'),
-    BriefPhraseButton('Wie ist das Wetter bei euch?', 'Wie ist das Wetter bei euch?'),
-    BriefPhraseButton('war es', 'war es'),
-  ],
-);
-
-const _themenHaustiere = BriefThemaConfig(
-  name: 'Haustiere',
-  leitfrage: 'Was hast du mit deinem Haustier gemacht?',
-  woerter: [
-    BriefWortItem('einen Hund',           symbolWord: 'Hund'),
-    BriefWortItem('eine Katze',           symbolWord: 'Katze'),
-    BriefWortItem('einen Hasen',          symbolWord: 'Hase'),
-    BriefWortItem('einen Hamster',        symbolWord: 'Hamster'),
-    BriefWortItem('ein Meerschweinchen',  symbolWord: 'Meerschweinchen'),
-    BriefWortItem('einen Vogel',          symbolWord: 'Vogel'),
-    BriefWortItem('einen Papagei',        symbolWord: 'Papagei'),
-    BriefWortItem('einen Fisch',          symbolWord: 'Fisch'),
-    BriefWortItem('ein Pferd',            symbolWord: 'Pferd'),
-    BriefWortItem('ein Huhn',             symbolWord: 'Huhn'),
-    BriefWortItem('eine Maus',            symbolWord: 'Maus'),
-  ],
-  phraseButtons: [
-    BriefPhraseButton('Ich habe', 'Ich habe'),
-    BriefPhraseButton('Wir haben', 'Wir haben'),
-  ],
-);
-
-const _themenBeschreiben = BriefThemaConfig(
-  name: 'Beschreibungen',
-  leitfrage: 'Wie war es?',
-  woerter: [
-    BriefWortItem('super'),       BriefWortItem('gut'),
-    BriefWortItem('toll'),        BriefWortItem('wunderbar'),
-    BriefWortItem('schlecht'),    BriefWortItem('schrecklich'),
-    BriefWortItem('nervig'),      BriefWortItem('kalt'),
-    BriefWortItem('heiß'),        BriefWortItem('krank'),
-    BriefWortItem('furchtbar'),   BriefWortItem('unbequem'),
-  ],
-  phraseButtons: [
-    BriefPhraseButton('Das ist', 'Das ist'),
-    BriefPhraseButton('Der ist', 'Der ist'),
-    BriefPhraseButton('Die ist', 'Die ist'),
-    BriefPhraseButton('Das war', 'Das war'),
-  ],
-);
-
-const _themenHobby = BriefThemaConfig(
-  name: 'Hobby',
-  leitfrage: 'Was machst du gerne in deiner Freizeit?',
-  woerter: [
-    BriefWortItem('fernsehen'),
-    BriefWortItem('Musik hören',        symbolWord: 'Musik'),
-    BriefWortItem('ins Kino gehen',     symbolWord: 'Kino'),
-    BriefWortItem('Filme anschauen',    symbolWord: 'Film'),
-    BriefWortItem('ins Konzert gehen',  symbolWord: 'Konzert'),
-    BriefWortItem('ein Buch anschauen', symbolWord: 'Buch'),
-    BriefWortItem('kochen'),
-    BriefWortItem('Karten spielen',     symbolWord: 'Karten'),
-    BriefWortItem('ins Theater gehen',  symbolWord: 'Theater'),
-    BriefWortItem('im Garten arbeiten', symbolWord: 'Garten'),
-    BriefWortItem('Spazieren gehen',    symbolWord: 'spazieren'),
-    BriefWortItem('wandern'),
-    BriefWortItem('tanzen'),
-    BriefWortItem('in die Disco',       symbolWord: 'Disco'),
-    BriefWortItem('spielen'),
-    BriefWortItem('fotografieren'),
-    BriefWortItem('schwimmen'),
-    BriefWortItem('in den Zoo gehen',   symbolWord: 'Zoo'),
-    BriefWortItem('shoppen gehen',      symbolWord: 'shoppen'),
-    BriefWortItem('Basketball'),
-    BriefWortItem('Handball'),
-    BriefWortItem('Fahrrad fahren',     symbolWord: 'Fahrrad'),
-    BriefWortItem('Yoga'),
-    BriefWortItem('Musik machen',       symbolWord: 'Musik'),
-    BriefWortItem('Lesen'),
-    BriefWortItem('Hörbücher anhören',  symbolWord: 'Buch'),
-    BriefWortItem('malen'),
-    BriefWortItem('Lego bauen',         symbolWord: 'Lego'),
-    BriefWortItem('Autos'),
-    BriefWortItem('Tiere'),
-    BriefWortItem('Ohrringe'),
-    BriefWortItem('Parfüm'),
-    BriefWortItem('Lidschatten'),
-    BriefWortItem('Lippenstift'),
-    BriefWortItem('Nagellack'),
-  ],
-  phraseButtons: [
-    BriefPhraseButton('Ich mag', 'Ich mag'),
-    BriefPhraseButton('Magst du', 'Magst du'),
-    BriefPhraseButton('Ich mache gerne', 'Ich mache gerne'),
-  ],
-);
-
-const _themenKleidung = BriefThemaConfig(
-  name: 'Kleidung',
-  leitfrage: 'Was trägst du gerne?',
-  woerter: [
-    BriefWortItem('Hose'),
-    BriefWortItem('Rock'),
-    BriefWortItem('Kleid'),
-    BriefWortItem('Shirt'),
-    BriefWortItem('Pulli'),
-    BriefWortItem('Jacke'),
-    BriefWortItem('Mantel'),
-    BriefWortItem('Schuhe'),
-    BriefWortItem('Socken'),
-    BriefWortItem('Schlafanzug'),
-    BriefWortItem('Mütze'),
-    BriefWortItem('Schal'),
-    BriefWortItem('Handschuhe'),
-    BriefWortItem('Sportkleidung', symbolWord: 'Sport'),
-    BriefWortItem('Badeanzug',     symbolWord: 'schwimmen'),
-    BriefWortItem('Rucksack'),
-  ],
-  phraseButtons: [
-    BriefPhraseButton('Ich trage', 'Ich trage'),
-    BriefPhraseButton('Ich mag', 'Ich mag'),
-    BriefPhraseButton('Hast du', 'Hast du'),
-  ],
-);
-
-const _themenBedanken = BriefThemaConfig(
-  name: 'Bedanken',
-  leitfrage: 'Wofür möchtest du dich bedanken?',
-  woerter: [
-    BriefWortItem('für das Geschenk',       symbolWord: 'Geschenk'),
-    BriefWortItem('für die Geschenke',      symbolWord: 'Geschenk'),
-    BriefWortItem('für deinen Brief',       symbolWord: 'Brief'),
-    BriefWortItem('für deinen Besuch',      symbolWord: 'Besuch'),
-    BriefWortItem('für den tollen Ausflug', symbolWord: 'Ausflug'),
-    BriefWortItem('für die Einladung',      symbolWord: 'einladen'),
-    BriefWortItem('für die Wünsche',        symbolWord: 'wünschen'),
-  ],
-  phraseButtons: [
-    BriefPhraseButton('Danke', 'Danke'),
-    BriefPhraseButton('Vielen Dank', 'Vielen Dank'),
-  ],
-);
-
-const _themenWuenschen = BriefThemaConfig(
-  name: 'Wünschen',
-  leitfrage: 'Was möchtest du wünschen?',
-  woerter: [
-    BriefWortItem('frohe Ostern',          symbolWord: 'Ostern'),
-    BriefWortItem('ein gutes neues Jahr',  symbolWord: 'Neujahr'),
-    BriefWortItem('frohe Weihnachten',     symbolWord: 'Weihnachten'),
-    BriefWortItem('alles Gute',            symbolWord: 'gut'),
-    BriefWortItem('viel Glück',            symbolWord: 'Glück'),
-    BriefWortItem('gute Besserung',        symbolWord: 'krank'),
-    BriefWortItem('Gesundheit'),
-    BriefWortItem('viele Geschenke',       symbolWord: 'Geschenk'),
-    BriefWortItem('viele Freunde',         symbolWord: 'Freund'),
-    BriefWortItem('alles Liebe',           symbolWord: 'lieben'),
-    BriefWortItem('viel Freude',           symbolWord: 'glücklich'),
-  ],
-  phraseButtons: [
-    BriefPhraseButton('Ich wünsche dir', 'Ich wünsche dir'),
-  ],
-);
-
-const _themenVerabredenWann = BriefThemaConfig(
-  name: 'Wann',
-  leitfrage: 'Wann kannst du?',
-  woerter: [
-    BriefWortItem('am Montag',              symbolWord: 'Montag'),
-    BriefWortItem('am Dienstag',            symbolWord: 'Dienstag'),
-    BriefWortItem('am Mittwoch',            symbolWord: 'Mittwoch'),
-    BriefWortItem('am Donnerstag',          symbolWord: 'Donnerstag'),
-    BriefWortItem('am Freitag',             symbolWord: 'Freitag'),
-    BriefWortItem('am Samstag',             symbolWord: 'Samstag'),
-    BriefWortItem('am Sonntag',             symbolWord: 'Sonntag'),
-    BriefWortItem('in der Frühstückspause', symbolWord: 'Frühstück'),
-    BriefWortItem('in der Mittagspause',    symbolWord: 'Mittagessen'),
-    BriefWortItem('heute Mittag',           symbolWord: 'Mittag'),
-    BriefWortItem('heute Abend',            symbolWord: 'Abend'),
-  ],
-  phraseButtons: [],
-);
-
-const _themenVerabredenWas = BriefThemaConfig(
-  name: 'Was',
-  leitfrage: 'Was wollt ihr machen?',
-  woerter: [
-    BriefWortItem('fernsehen'),
-    BriefWortItem('Musik hören',          symbolWord: 'Musik'),
-    BriefWortItem('ins Kino',             symbolWord: 'Kino'),
-    BriefWortItem('einen Film anschauen', symbolWord: 'Film'),
-    BriefWortItem('ins Konzert',          symbolWord: 'Konzert'),
-    BriefWortItem('ein Buch anschauen',   symbolWord: 'Buch'),
-    BriefWortItem('kochen'),
-    BriefWortItem('Karten spielen',       symbolWord: 'Karten'),
-    BriefWortItem('ins Theater',          symbolWord: 'Theater'),
-    BriefWortItem('im Garten arbeiten',   symbolWord: 'Garten'),
-    BriefWortItem('Spazieren gehen',      symbolWord: 'spazieren'),
-    BriefWortItem('wandern'),
-    BriefWortItem('tanzen'),
-    BriefWortItem('in die Disco',         symbolWord: 'Disco'),
-    BriefWortItem('spielen'),
-    BriefWortItem('fotografieren'),
-    BriefWortItem('ins Schwimmbad gehen', symbolWord: 'schwimmen'),
-    BriefWortItem('in den Zoo gehen',     symbolWord: 'Zoo'),
-    BriefWortItem('shoppen gehen',        symbolWord: 'shoppen'),
-    BriefWortItem('Tischkicker spielen',  symbolWord: 'Kicker'),
-    BriefWortItem('Kettcar fahren',       symbolWord: 'Kettcar'),
-  ],
-  phraseButtons: [
-    BriefPhraseButton('Wir könnten', 'Wir könnten'),
-    BriefPhraseButton('Wollen wir', 'Wollen wir'),
-  ],
-);
-
-const _themenVerabredenWo = BriefThemaConfig(
-  name: 'Wo',
-  leitfrage: 'Wo wollt ihr euch treffen?',
-  woerter: [
-    BriefWortItem('in der Schülerbücherei', symbolWord: 'Bücherei'),
-    BriefWortItem('auf dem Pausenhof',      symbolWord: 'Pausenhof'),
-    BriefWortItem('in der Pausenecke',      symbolWord: 'Pause'),
-    BriefWortItem('in der Pausenhalle',     symbolWord: 'Halle'),
-    BriefWortItem('beim Tischkicker',       symbolWord: 'Kicker'),
-    BriefWortItem('im Cafe',                symbolWord: 'Cafe'),
-    BriefWortItem('bei mir zu Hause',       symbolWord: 'Haus'),
-    BriefWortItem('bei dir zu Hause',       symbolWord: 'Haus'),
-    BriefWortItem('im Kino',                symbolWord: 'Kino'),
-    BriefWortItem('in der Stadt',           symbolWord: 'Stadt'),
-  ],
-  phraseButtons: [
-    BriefPhraseButton('Wir treffen uns', 'Wir treffen uns'),
-  ],
-);
 
 // ── Schritte ──────────────────────────────────────────────────────────────────
 
@@ -442,6 +85,7 @@ enum _BriefSchritt {
   wetter,
   schule,
   gesundheit,
+  gesundheitDetail,   // Brief 4 Gesundheit (Körperteile/Krankheitsvokabular)
   // Abschluss
   ende,
   endeGruesse,
@@ -459,8 +103,84 @@ class BriefScreen extends StatefulWidget {
 class _BriefScreenState extends State<BriefScreen> {
   _BriefSchritt _schritt = _BriefSchritt.begruessung;
   final List<_BriefSchritt> _history = [];
+  final Map<_BriefSchritt, GridPage> _rawPages = {}; // Rohe Seiten (nie überschrieben)
+  final Map<_BriefSchritt, GridPage> _pages = {};    // Override-angewendete Seiten
+  /// Aktuelle WL-Seite für paginierte AutoContent-Slots (wird bei Navigation zurückgesetzt).
+  int _wlPage = 0;
+  /// Reverse-Lookup: Grid3-Name → _BriefSchritt (für Jump.To-Befehle).
+  late final Map<String, _BriefSchritt> _gridNameToStep;
+  /// Steuert den In-Place-Layout-Editor (transparentes Overlay).
+  bool _editorOpen = false;
+  /// Verwaltet benutzerdefinierte Wortlisten-Überschreibungen.
+  final GridOverrideService _overrideService = GridOverrideService();
 
-  // ── Navigation ──────────────────────────────────────────────────────────
+  // ── Grid-Namen aller Brief-Seiten ──────────────────────────────────────────
+
+  static const _stepToGridName = <_BriefSchritt, String>{
+    _BriefSchritt.begruessung:       'Brief 1 Begrüßung',
+    _BriefSchritt.personen:          'Brief 1 Personen',
+    _BriefSchritt.einleitung:        'Brief 2 Einleitung',
+    _BriefSchritt.inhaltsuebersicht: 'Brief 3 Inhaltsübersicht',
+    _BriefSchritt.verabreden:        'Brief 4 jemanden treffen',
+    _BriefSchritt.verabredenWann:    'Brief 4 jemanden treffen wann',
+    _BriefSchritt.verabredenWas:     'Brief 4 jemanden treffen was',
+    _BriefSchritt.verabredenWo:      'Brief 4 jemanden treffen wo',
+    _BriefSchritt.uberDichUndMich:   'Brief 3 Inhalt dich und mich',
+    _BriefSchritt.uberDich:          'Brief 4 über dich',
+    _BriefSchritt.uberMich:          'Brief 4 über mich',
+    _BriefSchritt.trinken:           'Brief 4 Trinken',
+    _BriefSchritt.kleidung:          'Brief 4 Kleidung',
+    _BriefSchritt.hobby:             'Brief 4 Hobby',
+    _BriefSchritt.essen:             'Brief 4 Essen',
+    _BriefSchritt.haustiere:         'Brief 4 Haustiere',
+    _BriefSchritt.wuenscheUndDanken: 'Brief 3 Inhalt Wünsche und Danken',
+    _BriefSchritt.wuenschen:         'Brief 4 wünschen',
+    _BriefSchritt.bedanken:          'Brief 4 Bedanken',
+    _BriefSchritt.sonstiges:         'Brief 3 Inhalt Dies und Das',
+    _BriefSchritt.wetter:            'Brief 4 Wetter',
+    _BriefSchritt.schule:            'Brief 4 Schule',
+    _BriefSchritt.gesundheit:        'Brief 4 Gesundheit Sätze',
+    _BriefSchritt.gesundheitDetail:  'Brief 4 Gesundheit',
+    _BriefSchritt.gefuehle:          'Brief 4 Gefühle',
+    _BriefSchritt.beschreibungen:    'Brief 4 Beschreiben',
+    _BriefSchritt.ende:              'Brief 5 Ende',
+    _BriefSchritt.endeGruesse:       'Brief 6 Ende Grüße',
+  };
+
+  // ── Leitfragen ─────────────────────────────────────────────────────────────
+
+  static const _leitfragen = <_BriefSchritt, String>{
+    _BriefSchritt.begruessung:       'Wie möchtest du den Brief beginnen?',
+    _BriefSchritt.personen:          'An wen schreibst du?',
+    _BriefSchritt.einleitung:        'Was schreibst du zur Einleitung?',
+    _BriefSchritt.inhaltsuebersicht: 'Über was möchtest du schreiben?',
+    _BriefSchritt.verabreden:        'Verabreden',
+    _BriefSchritt.verabredenWann:    'Wann kannst du?',
+    _BriefSchritt.verabredenWas:     'Was wollt ihr machen?',
+    _BriefSchritt.verabredenWo:      'Wo wollt ihr euch treffen?',
+    _BriefSchritt.uberDichUndMich:   'Über dich und mich',
+    _BriefSchritt.uberDich:          'Fragen über die andere Person',
+    _BriefSchritt.uberMich:          'Über dich selbst',
+    _BriefSchritt.trinken:           'Was trinkst du gerne?',
+    _BriefSchritt.kleidung:          'Was trägst du gerne?',
+    _BriefSchritt.hobby:             'Was machst du gerne in der Freizeit?',
+    _BriefSchritt.essen:             'Was hast du gegessen?',
+    _BriefSchritt.haustiere:         'Was hast du mit deinem Haustier gemacht?',
+    _BriefSchritt.wuenscheUndDanken: 'Wünsche und Danken',
+    _BriefSchritt.wuenschen:         'Was möchtest du wünschen?',
+    _BriefSchritt.bedanken:          'Wofür möchtest du dich bedanken?',
+    _BriefSchritt.sonstiges:         'Sonstiges',
+    _BriefSchritt.wetter:            'Wie war das Wetter?',
+    _BriefSchritt.schule:            'Wie war die Schule?',
+    _BriefSchritt.gesundheit:        'Wie geht es dir gesundheitlich?',
+    _BriefSchritt.gesundheitDetail:  'Was hast du / hattest du?',
+    _BriefSchritt.gefuehle:          'Wie hast du dich gefühlt?',
+    _BriefSchritt.beschreibungen:    'Wie war es?',
+    _BriefSchritt.ende:              'Wie möchtest du den Brief beenden?',
+    _BriefSchritt.endeGruesse:       'Mit welchem Gruß möchtest du schließen?',
+  };
+
+  // ── Haupt-Sequenz für Vorwärts-Navigation ──────────────────────────────────
 
   static const _mainSeq = [
     _BriefSchritt.begruessung,
@@ -471,14 +191,101 @@ class _BriefScreenState extends State<BriefScreen> {
     _BriefSchritt.endeGruesse,
   ];
 
+  // ── Initialisierung ────────────────────────────────────────────────────────
+
+  @override
+  void initState() {
+    super.initState();
+    _gridNameToStep = {
+      for (final e in _stepToGridName.entries) e.value: e.key,
+    };
+    _loadPages();
+    _overrideService.load().then((_) {
+      if (mounted) setState(_applyOverrides);
+    });
+  }
+
+  void _loadPages() {
+    final svc = GridImportService();
+    for (final entry in _stepToGridName.entries) {
+      final page = svc.importPageSync(entry.value);
+      if (page != null) {
+        _rawPages[entry.key] = page;
+        _pages[entry.key]    = page;
+      }
+    }
+  }
+
+  /// Wendet gespeicherte Überschreibungen (Wortliste + Zellen + Layout) auf alle Seiten an.
+  /// Startet immer von _rawPages (nie von der bereits angewendeten Seite),
+  /// damit Override-Schlüssel nach jedem App-Start korrekt gefunden werden.
+  void _applyOverrides() {
+    for (final entry in _stepToGridName.entries) {
+      final existing = _rawPages[entry.key] ?? _pages[entry.key];
+      if (existing == null) continue;
+
+      final wl        = _overrideService.getWordList(entry.value);
+      final cellOv    = _overrideService.getAllCellOverrides(entry.value);
+      final layoutOv  = _overrideService.getLayoutOverrides(entry.value);
+      final sizeOv    = _overrideService.getGridSize(entry.value);
+      final hasCellOv   = cellOv  != null && cellOv.isNotEmpty;
+      final hasLayoutOv = layoutOv != null && layoutOv.isNotEmpty;
+      final hasSizeOv   = sizeOv  != null;
+
+      if (wl == null && !hasCellOv && !hasLayoutOv && !hasSizeOv) continue;
+
+      // Zell-Inhalte + Positionen zusammenführen
+      final cells = existing.cells.map((c) {
+        final origKey = '${c.x},${c.y}';
+        final cOv = hasCellOv   ? cellOv[origKey]   : null;
+        final lOv = hasLayoutOv ? layoutOv[origKey] : null;
+        if (cOv == null && lOv == null) return c;
+        return GridCell(
+          x:        lOv?['x']        ?? c.x,
+          y:        lOv?['y']        ?? c.y,
+          colSpan:  lOv?['colSpan']  ?? c.colSpan,
+          rowSpan:  lOv?['rowSpan']  ?? c.rowSpan,
+          caption:      (cOv?['caption']    as String?) ?? c.caption,
+          symbolStem:   (cOv?['symbolStem'] as String?) ?? c.symbolStem,
+          symbolCategory: c.symbolCategory,
+          metacmPath:   c.metacmPath,
+          localImagePath: c.localImagePath,
+          iconData: c.iconData,
+          style: c.style, type: c.type, commands: c.commands,
+        );
+      }).toList();
+
+      _pages[entry.key] = GridPage(
+        name: existing.name,
+        columns: sizeOv?['columns'] ?? existing.columns,
+        rows:    sizeOv?['rows']    ?? existing.rows,
+        backgroundColor: existing.backgroundColor,
+        cells: cells,
+        wordList: wl ?? existing.wordList,
+      );
+    }
+  }
+
+  // ── Navigation ──────────────────────────────────────────────────────────────
+
   void _navigateTo(_BriefSchritt step) {
     setState(() {
       _history.add(_schritt);
       _schritt = step;
+      _wlPage = 0;
     });
   }
 
+  /// True wenn der aktuelle Schritt NICHT in der Haupt-Sequenz liegt
+  /// (d. h. wir befinden uns in einem Sub- oder Hub-Screen).
+  bool get _isSubScreen => !_mainSeq.contains(_schritt);
+
   void _vorwaerts() {
+    if (_isSubScreen) {
+      // Aus jedem Sub-Screen direkt zurück zur Inhaltsübersicht springen.
+      _navigateTo(_BriefSchritt.inhaltsuebersicht);
+      return;
+    }
     final idx = _mainSeq.indexOf(_schritt);
     if (idx >= 0 && idx < _mainSeq.length - 1) {
       _navigateTo(_mainSeq[idx + 1]);
@@ -493,139 +300,446 @@ class _BriefScreenState extends State<BriefScreen> {
     }
   }
 
-  // ── Build ────────────────────────────────────────────────────────────────
+  // ── Symbol-Auflösung ──────────────────────────────────────────────────────
+
+  /// Löst einen Grid3-Metacom-Stem direkt zu einem Flutter-Asset-Pfad auf.
+  ///
+  /// Bypass der NasiraData-Lookup-Pipeline — nutzt den AssetManifest-Basename-Index
+  /// in [AssetResolverService]. Gibt null zurück, wenn der Index noch nicht geladen
+  /// ist oder kein passender Asset gefunden wurde.
+  String? _resolveSymbol(NasiraAppState state, String? stem) {
+    if (stem == null) return null;
+    if (!state.assetResolver.isReady) return null;
+    return state.assetResolver.resolve('$stem.jpg');
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
+  /// Liefert die Edit-Aktion für den aktuellen Schritt (null wenn kein Grid geladen).
+  VoidCallback? _currentOnEdit() {
+    final gridName = _stepToGridName[_schritt];
+    if (gridName == null || _pages[_schritt] == null) return null;
+    return () => setState(() => _editorOpen = true);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final state = context.watch<NasiraAppState>();
+    final state    = context.watch<NasiraAppState>();
+    final gridName = _stepToGridName[_schritt];
+    final page     = _pages[_schritt];
+
+    // Für den Editor: AutoContent-Zellen → Wortlisten-Einträge vorberechnen.
+    // (AutoContent-Zellen haben keine caption/symbolStem — Inhalt kommt aus wordList.)
+    Map<String, GridWordListItem> autoMap = {};
+    if (_editorOpen && page != null) {
+      final autoSlots = page.cells
+          .where((c) => c.type == GridCellType.autoContent)
+          .toList()
+        ..sort((a, b) => a.y != b.y ? a.y.compareTo(b.y) : a.x.compareTo(b.x));
+      for (int i = 0; i < autoSlots.length && i < page.wordList.length; i++) {
+        autoMap['${autoSlots[i].x},${autoSlots[i].y}'] = page.wordList[i];
+      }
+    }
+
     return Scaffold(
       backgroundColor: NasiraColors.briefBg,
       body: SafeArea(
-        child: Column(
-          children: [
-            NasiraModuleHeader(
-              controller: state.textController,
-              accentColor: NasiraColors.navGreen,
-              onBack: _zurueck,
-              onForward: _vorwaerts,
-            ),
-            Expanded(child: _buildStepContent(state)),
-          ],
-        ),
+        child: _editorOpen && page != null && gridName != null
+            // ── WYSIWYG Layout-Editor (ersetzt Seiten-Inhalt direkt) ────
+            ? GridLayoutEditor(
+                page:      page,
+                rawPage:   _rawPages[_schritt],
+                pageName:  gridName,
+                pageColor: page.backgroundColor,
+                overrideService: _overrideService,
+                cellBuilder: (cell) {
+                  // AutoContent → echtes WL-Item anzeigen
+                  final wlItem = autoMap['${cell.x},${cell.y}'];
+                  if (wlItem != null) return _buildWordItem(state, wlItem);
+                  return _buildCellForEditor(state, cell);
+                },
+                onDismiss: () => setState(() => _editorOpen = false),
+                onChanged: () => setState(() {
+                  _applyOverrides();
+                  _wlPage = 0;
+                }),
+              )
+            // ── Normal-Modus ─────────────────────────────────────────────
+            : Column(
+                children: [
+                  NasiraModuleHeader(
+                    controller: state.textController,
+                    accentColor: NasiraColors.navGreen,
+                    onBack: _zurueck,
+                    onForward: _vorwaerts,
+                    onMenu: _currentOnEdit(),
+                    isForwardOval: _isSubScreen,
+                  ),
+                  Expanded(child: _buildStepContent(state)),
+                ],
+              ),
       ),
     );
   }
 
+  /// Rendert eine Zelle für den Layout-Editor (ohne onTap — Editor verwaltet Gesten).
+  Widget _buildCellForEditor(NasiraAppState state, GridCell cell) {
+    final displayCaption = cell.caption?.isNotEmpty == true
+        ? cell.caption
+        : cell.insertText?.trim();
+    final useLocalPng = cell.localImagePath != null;
+    final resolvedAssetPath = useLocalPng ? null : _resolveSymbol(state, cell.symbolStem);
+    final fallbackWord = (useLocalPng || resolvedAssetPath != null) ? null :
+        cell.symbolStem ??
+        (cell.insertText != null
+            ? _keyWord(cell.insertText!)
+            : (displayCaption != null && displayCaption.isNotEmpty
+                ? _keyWord(displayCaption)
+                : null));
+
+    final inner = NasiraGridCell(
+      caption:         displayCaption,
+      fileImagePath:   cell.localImagePath,
+      assetPath:       resolvedAssetPath,
+      symbolWord:      fallbackWord,
+      icon:            cell.iconData,
+      backgroundColor: cell.backgroundColor,
+      textColor:       cell.foregroundColor,
+      fontSize:        cell.style.isOval ? 12 : 11,
+      borderRadius:    cell.style.isOval ? 100 : 7,
+    );
+
+    if (cell.hasBorder) {
+      return Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: NasiraColors.briefBorder, width: 1.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: inner,
+      );
+    }
+    return inner;
+  }
+
   Widget _buildStepContent(NasiraAppState state) {
     return switch (_schritt) {
-      _BriefSchritt.begruessung       => _buildBegruessung(state),
-      _BriefSchritt.personen          => _buildPersonen(state),
+      // Haupt-Sequenz (parser-getrieben, WL-only)
+      _BriefSchritt.begruessung       => _buildGridPage(state, _BriefSchritt.begruessung),
+      _BriefSchritt.personen          => _buildGridPage(state, _BriefSchritt.personen),
       _BriefSchritt.einleitung        => _buildEinleitung(state),
-      _BriefSchritt.inhaltsuebersicht => _buildInhaltsuebersicht(state),
+      // Inhalt
+      _BriefSchritt.inhaltsuebersicht => _buildGridPage(state, _BriefSchritt.inhaltsuebersicht),
       // Verabreden
-      _BriefSchritt.verabreden        => _buildVerabreden(state),
-      _BriefSchritt.verabredenWann    => _buildThemaPage(state, _themenVerabredenWann),
-      _BriefSchritt.verabredenWas     => _buildThemaPage(state, _themenVerabredenWas),
-      _BriefSchritt.verabredenWo      => _buildThemaPage(state, _themenVerabredenWo),
+      _BriefSchritt.verabreden        => _buildGridPage(state, _BriefSchritt.verabreden),
+      _BriefSchritt.verabredenWann    => _buildGridPage(state, _BriefSchritt.verabredenWann),
+      _BriefSchritt.verabredenWas     => _buildGridPage(state, _BriefSchritt.verabredenWas),
+      _BriefSchritt.verabredenWo      => _buildGridPage(state, _BriefSchritt.verabredenWo),
       // Über dich und mich
-      _BriefSchritt.uberDichUndMich   => _buildUberDichUndMich(state),
-      _BriefSchritt.uberDich          => _buildUberDich(state),
-      _BriefSchritt.uberMich          => _buildUberMich(state),
-      _BriefSchritt.trinken           => _buildThemaPage(state, _themenTrinken),
-      _BriefSchritt.kleidung          => _buildThemaPage(state, _themenKleidung),
-      _BriefSchritt.hobby             => _buildThemaPage(state, _themenHobby),
-      _BriefSchritt.essen             => _buildThemaPage(state, _themenEssen),
-      _BriefSchritt.haustiere         => _buildThemaPage(state, _themenHaustiere),
+      _BriefSchritt.uberDichUndMich   => _buildGridPage(state, _BriefSchritt.uberDichUndMich),
+      _BriefSchritt.uberDich          => _buildGridPage(state, _BriefSchritt.uberDich),
+      _BriefSchritt.uberMich          => _buildGridPage(state, _BriefSchritt.uberMich),
+      _BriefSchritt.trinken           => _buildGridPage(state, _BriefSchritt.trinken),
+      _BriefSchritt.kleidung          => _buildGridPage(state, _BriefSchritt.kleidung),
+      _BriefSchritt.hobby             => _buildGridPage(state, _BriefSchritt.hobby),
+      _BriefSchritt.essen             => _buildGridPage(state, _BriefSchritt.essen),
+      _BriefSchritt.haustiere         => _buildGridPage(state, _BriefSchritt.haustiere),
       // Wünsche und Danken
-      _BriefSchritt.wuenscheUndDanken => _buildWuenscheUndDanken(state),
-      _BriefSchritt.wuenschen         => _buildThemaPage(state, _themenWuenschen),
-      _BriefSchritt.bedanken          => _buildThemaPage(state, _themenBedanken),
+      _BriefSchritt.wuenscheUndDanken => _buildGridPage(state, _BriefSchritt.wuenscheUndDanken),
+      _BriefSchritt.wuenschen         => _buildGridPage(state, _BriefSchritt.wuenschen),
+      _BriefSchritt.bedanken          => _buildGridPage(state, _BriefSchritt.bedanken),
       // Sonstiges
-      _BriefSchritt.sonstiges         => _buildSonstiges(state),
-      _BriefSchritt.wetter            => _buildThemaPage(state, _themenWetter),
-      _BriefSchritt.schule            => _buildThemaPage(state, _themenSchule),
-      _BriefSchritt.gesundheit        => _buildGesundheit(state),
-      // Direkte Themen
-      _BriefSchritt.gefuehle          => _buildThemaPage(state, _themenGefuehle),
-      _BriefSchritt.beschreibungen    => _buildThemaPage(state, _themenBeschreiben),
+      _BriefSchritt.sonstiges         => _buildGridPage(state, _BriefSchritt.sonstiges),
+      _BriefSchritt.wetter            => _buildGridPage(state, _BriefSchritt.wetter),
+      _BriefSchritt.schule            => _buildGridPage(state, _BriefSchritt.schule),
+      _BriefSchritt.gesundheit        => _buildGridPage(state, _BriefSchritt.gesundheit),
+      _BriefSchritt.gesundheitDetail  => _buildGridPage(state, _BriefSchritt.gesundheitDetail),
+      // Direkt
+      _BriefSchritt.gefuehle          => _buildGridPage(state, _BriefSchritt.gefuehle),
+      _BriefSchritt.beschreibungen    => _buildGridPage(state, _BriefSchritt.beschreibungen),
       // Abschluss
-      _BriefSchritt.ende              => _buildEnde(state),
+      _BriefSchritt.ende              => _buildGridPage(state, _BriefSchritt.ende),
       _BriefSchritt.endeGruesse       => _buildEndeGruesse(state),
     };
   }
 
-  // ── Begrüßung ────────────────────────────────────────────────────────────
+  // ── Haupt-Layout-Methode (exaktes X/Y-Grid aus XML) ─────────────────────
 
-  Widget _buildBegruessung(NasiraAppState state) {
-    const items = ['Hallo', 'Liebe', 'Lieber'];
-    return Column(children: [
-      Expanded(child: _buildGrid(
-        itemCount: items.length,
-        builder: (i) => NasiraGridCell(
-          caption: items[i],
-          symbolWord: items[i],
-          backgroundColor: NasiraColors.briefTopic,
-          onTap: () => state.insertPhrase(items[i]),
+  Widget _buildGridPage(NasiraAppState state, _BriefSchritt schritt) {
+    final page = _pages[schritt];
+    final leitfrage = _leitfragen[schritt] ?? '';
+    final gridName = _stepToGridName[schritt];
+
+    final VoidCallback? onEdit = (page != null && gridName != null)
+        ? () => GridPageEditorSheet.show(
+              context: context,
+              page: page,
+              overrideService: _overrideService,
+              onSaved: () => setState(() {
+                _applyOverrides();
+                _wlPage = 0;
+              }),
+            )
+        : null;
+
+    if (page == null) {
+      return Column(children: [
+        Expanded(
+          child: Center(
+            child: Text(leitfrage,
+                style: const TextStyle(color: Colors.grey, fontSize: 14)),
+          ),
         ),
-      )),
-      _buildLeitfragenStrip(state, ['Wie möchtest du den Brief beginnen?']),
+        _buildLeitfragenStrip(state, [leitfrage], onEdit: onEdit),
+      ]);
+    }
+
+    return Column(children: [
+      Expanded(child: _buildExactGrid(state, page)),
+      _buildLeitfragenStrip(state, [leitfrage], onEdit: onEdit),
     ]);
   }
 
-  // ── Personen ─────────────────────────────────────────────────────────────
+  /// Stack-basiertes Grid: jede Zelle sitzt an ihrer exakten XML-Position.
+  ///
+  /// Workspace-Zeilen (Grid3-Texteditor) werden übersprungen —
+  /// deren Funktion übernimmt NasiraModuleHeader.
+  Widget _buildExactGrid(NasiraAppState state, GridPage page) {
+    // Workspace-Zeilen bestimmen und überspringen
+    final wsCell = page.cells
+        .where((c) => c.type == GridCellType.workspace)
+        .firstOrNull;
+    final firstContent = wsCell != null ? wsCell.y + wsCell.rowSpan : 0;
+    final contentRows  = page.rows - firstContent;
+    if (contentRows <= 0) return const SizedBox.shrink();
 
-  Widget _buildPersonen(NasiraAppState state) {
-    const items = ['Mama', 'Papa', 'Opa', 'Oma', 'Onkel', 'Tante'];
-    return Column(children: [
-      Expanded(child: _buildGrid(
-        itemCount: items.length,
-        builder: (i) => NasiraGridCell(
-          caption: items[i],
-          symbolWord: items[i],
-          backgroundColor: NasiraColors.briefTopic,
-          onTap: () => state.insertPhrase(items[i]),
-        ),
-      )),
-      _buildLeitfragenStrip(state, ['An wen schreibst du?']),
-    ]);
+    final contentCells = page.cells
+        .where((c) => c.type != GridCellType.workspace && c.y >= firstContent)
+        .toList();
+
+    final autoContent = contentCells
+        .where((c) => c.type == GridCellType.autoContent)
+        .toList()
+      ..sort((a, b) => a.y != b.y ? a.y.compareTo(b.y) : a.x.compareTo(b.x));
+
+    final regularCells = contentCells
+        .where((c) => c.type != GridCellType.autoContent)
+        .toList();
+
+    const gap = 3.0;
+
+    return Container(
+      color: page.backgroundColor,
+      child: LayoutBuilder(builder: (ctx, box) {
+        final cellW = box.maxWidth  / page.columns;
+        final cellH = box.maxHeight / contentRows;
+
+        return Stack(children: [
+          // ── Reguläre Zellen ──────────────────────────────────────────────
+          for (final cell in regularCells)
+            Positioned(
+              left:   cell.x * cellW + gap / 2,
+              top:    (cell.y - firstContent) * cellH + gap / 2,
+              width:  cell.colSpan * cellW - gap,
+              height: cell.rowSpan * cellH - gap,
+              child:  _buildRegularCell(state, cell, page, autoContent.length),
+            ),
+
+          // ── AutoContent-Zellen mit paginierten WL-Items ──────────────────
+          for (int i = 0; i < autoContent.length; i++)
+            Builder(builder: (_) {
+              final cell   = autoContent[i];
+              final wlIdx  = _wlPage * autoContent.length + i;
+              final item   = wlIdx < page.wordList.length
+                  ? page.wordList[wlIdx] : null;
+              return Positioned(
+                left:   cell.x * cellW + gap / 2,
+                top:    (cell.y - firstContent) * cellH + gap / 2,
+                width:  cell.colSpan * cellW - gap,
+                height: cell.rowSpan * cellH - gap,
+                child:  item != null
+                    ? _buildWordItem(state, item)
+                    : _buildEmptyAutoSlot(),
+              );
+            }),
+        ]);
+      }),
+    );
   }
 
-  // ── Einleitung ───────────────────────────────────────────────────────────
+  /// Rendert eine reguläre (nicht-AutoContent, nicht-Workspace) Zelle.
+  Widget _buildRegularCell(
+    NasiraAppState state,
+    GridCell cell,
+    GridPage page,
+    int acCount,
+  ) {
+    VoidCallback? onTap;
 
-  Widget _buildEinleitung(NasiraAppState state) {
-    final sentences = [
-      ...state.customSentences.forModule('brief').map((s) => s.sentence),
-      'Wie geht es dir?',
-      'Mir geht es gut.',
-      'Mir geht es nicht gut.',
-      'Ich vermisse dich.',
-      'Ich denk an dich!',
-      'Ich mag dich.',
-      'Ich hab dich lieb.',
-      'Ich liebe dich.',
-      'Vielen Dank für deinen letzten Brief.',
-      'Ich habe mich sehr darüber gefreut.',
-      'Vielen Dank für die letzte E-Mail.',
-      'Wir haben immer viel Spaß zusammen.',
-      'Wir haben lange nichts mehr voneinander gehört.',
-    ];
+    if (cell.isDeleteWord) {
+      onTap = state.deleteLastWord;
+    } else if (cell.isBack) {
+      onTap = _zurueck;
+    } else if (cell.isHome) {
+      onTap = () => Navigator.popUntil(context, (r) => r.isFirst);
+    } else if (cell.isMoreWords) {
+      onTap = () => setState(() {
+        if (acCount > 0) {
+          final totalPages = (page.wordList.length / acCount).ceil();
+          if (totalPages > 1) _wlPage = (_wlPage + 1) % totalPages;
+        }
+      });
+    } else if (cell.isInsertCell) {
+      onTap = () => state.insertPhrase(cell.insertText!);
+    } else if (cell.isPunctuation) {
+      onTap = () => state.insertPhrase(cell.punctuationChar!);
+    } else if (cell.isNavigation) {
+      final targetName = cell.jumpTarget;
+      final step = targetName != null ? _gridNameToStep[targetName] : null;
+      if (step != null) {
+        onTap = () => _navigateTo(step);
+      } else if (targetName != null &&
+          targetName.toLowerCase().contains('freies schreiben')) {
+        onTap = () => Navigator.push(context,
+            MaterialPageRoute(builder: (_) => const FreiesSchreibenScreen()));
+      }
+    }
 
-    return Column(children: [
-      Expanded(child: _buildGrid(
-        itemCount: sentences.length,
-        builder: (i) {
-          final text = sentences[i];
-          final isQuestion = text.endsWith('?');
+    // Caption: aus XML-Caption, sonst aus InsertText
+    final displayCaption = cell.caption?.isNotEmpty == true
+        ? cell.caption
+        : cell.insertText?.trim();
+
+    // Symbol: Custom-PNG hat Vorrang, dann AssetManifest-Index, dann Fallback-Lookup.
+    final useLocalPng = cell.localImagePath != null;
+    final resolvedAssetPath = useLocalPng ? null : _resolveSymbol(state, cell.symbolStem);
+    final fallbackWord = (useLocalPng || resolvedAssetPath != null) ? null :
+        cell.symbolStem ??
+        (cell.insertText != null
+            ? _keyWord(cell.insertText!)
+            : (displayCaption != null && displayCaption.isNotEmpty
+                ? _keyWord(displayCaption)
+                : null));
+
+    final inner = NasiraGridCell(
+      caption:         displayCaption,
+      fileImagePath:   cell.localImagePath,
+      assetPath:       resolvedAssetPath,
+      symbolWord:      fallbackWord,
+      icon:            cell.iconData,
+      backgroundColor: cell.backgroundColor,
+      textColor:       cell.foregroundColor,
+      fontSize:        cell.style.isOval ? 12 : 11,
+      onTap:           onTap,
+      borderRadius:    cell.style.isOval ? 100 : 7,
+    );
+
+    if (cell.hasBorder) {
+      return Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: NasiraColors.briefBorder, width: 1.5),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: inner,
+      );
+    }
+    return inner;
+  }
+
+  /// Wort-Kachel für einen AutoContent-Slot (WL-Item).
+  Widget _buildWordItem(NasiraAppState state, GridWordListItem item) {
+    // Custom-PNG nur wenn kein [metacm]-Verweis vorhanden.
+    final useCustomPng = item.localImagePath != null && item.metacmPath == null;
+    // Stem direkt über AssetManifest-Index auflösen (bypass Engine).
+    final resolvedPath = useCustomPng ? null : _resolveSymbol(state, item.symbolStem);
+
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: NasiraColors.briefBorder, width: 1.5),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: NasiraGridCell(
+        caption:         item.text,
+        fileImagePath:   useCustomPng ? item.localImagePath : null,
+        assetPath:       resolvedPath,
+        symbolWord:      (useCustomPng || resolvedPath != null)
+                             ? null
+                             : _keyWord(item.text),
+        backgroundColor: Colors.white,
+        textColor:       NasiraColors.textDark,
+        fontSize:        11,
+        elevation:       0,
+        borderRadius:    6,
+        onTap: () {
+          debugPrint('[WORDITEM] "${item.text}" → stem=${item.symbolStem ?? '-'} | resolved=${resolvedPath ?? 'fallback:${_keyWord(item.text)}'}');
+          state.insertPhrase(item.text);
+        },
+      ),
+    );
+  }
+
+  /// Leerer AutoContent-Slot (kein WL-Item auf dieser Seite).
+  Widget _buildEmptyAutoSlot() => Container(
+    decoration: BoxDecoration(
+      color: NasiraColors.briefBg,
+      borderRadius: BorderRadius.circular(8),
+    ),
+  );
+
+  // ── Flaches Grid (nur für Einleitung mit customSentences) ────────────────
+
+  Widget _buildFlatWordGrid(NasiraAppState state, List<GridWordListItem> words) {
+    return Padding(
+      padding: const EdgeInsets.all(8),
+      child: GridView.builder(
+        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+          maxCrossAxisExtent: 140,
+          crossAxisSpacing: 6,
+          mainAxisSpacing: 6,
+          childAspectRatio: 0.85,
+        ),
+        itemCount: words.length,
+        itemBuilder: (_, i) {
+          final item = words[i];
+          final bg = item.text.endsWith('?')
+              ? NasiraColors.briefQuestion
+              : item.text.endsWith('.') || item.text.endsWith('!')
+                  ? NasiraColors.briefSentence
+                  : NasiraColors.briefTopic;
+          final useCustomPng2 = item.localImagePath != null && item.metacmPath == null;
+          final resolvedPath2 = useCustomPng2 ? null : _resolveSymbol(state, item.symbolStem);
           return NasiraGridCell(
-            caption: text,
-            symbolWord: _keyWord(text),
-            backgroundColor: isQuestion
-                ? NasiraColors.briefQuestion
-                : NasiraColors.briefSentence,
-            onTap: () => state.insertPhrase(text),
+            caption:         item.text,
+            fileImagePath:   useCustomPng2 ? item.localImagePath : null,
+            assetPath:       resolvedPath2,
+            symbolWord:      (useCustomPng2 || resolvedPath2 != null)
+                                 ? null
+                                 : _keyWord(item.text),
+            backgroundColor: bg,
+            textColor:       Colors.white,
+            fontSize:        11,
+            onTap:           () => state.insertPhrase(item.text),
           );
         },
-      )),
+      ),
+    );
+  }
+
+  // ── Einleitung (eigener Builder wegen customSentences) ───────────────────
+
+  Widget _buildEinleitung(NasiraAppState state) {
+    // Eigene Sätze aus dem CustomSentenceService voranstellen
+    final custom = state.customSentences
+        .forModule('brief')
+        .map((s) => GridWordListItem(text: s.sentence))
+        .toList();
+
+    // Parser-Sätze aus dem Export
+    final parserWl = _pages[_BriefSchritt.einleitung]?.wordList ?? const [];
+
+    final all = [...custom, ...parserWl];
+
+    return Column(children: [
+      Expanded(child: _buildFlatWordGrid(state, all)),
       _buildLeitfragenStrip(state, [
         'Was schreibst du zur Einleitung?',
         'Was hast du gemacht?',
@@ -633,388 +747,7 @@ class _BriefScreenState extends State<BriefScreen> {
     ]);
   }
 
-  // ── Inhaltsübersicht ─────────────────────────────────────────────────────
-
-  Widget _buildInhaltsuebersicht(NasiraAppState state) {
-    final cells = <Widget>[
-      NasiraGridCell(
-        caption: 'Verabreden',
-        symbolWord: 'treffen',
-        backgroundColor: NasiraColors.briefTopic,
-        onTap: () => _navigateTo(_BriefSchritt.verabreden),
-      ),
-      NasiraGridCell(
-        caption: 'Über dich und mich',
-        symbolWord: 'sprechen',
-        backgroundColor: NasiraColors.briefTopic,
-        onTap: () => _navigateTo(_BriefSchritt.uberDichUndMich),
-      ),
-      NasiraGridCell(
-        caption: 'Wünsche und Danken',
-        symbolWord: 'wünschen',
-        backgroundColor: NasiraColors.briefTopic,
-        onTap: () => _navigateTo(_BriefSchritt.wuenscheUndDanken),
-      ),
-      NasiraGridCell(
-        caption: 'Sonstiges',
-        symbolWord: 'mehr',
-        backgroundColor: NasiraColors.briefTopic,
-        onTap: () => _navigateTo(_BriefSchritt.sonstiges),
-      ),
-      NasiraGridCell(
-        caption: 'Gefühle',
-        symbolWord: 'glücklich',
-        backgroundColor: NasiraColors.briefTopic,
-        onTap: () => _navigateTo(_BriefSchritt.gefuehle),
-      ),
-      NasiraGridCell(
-        caption: 'Beschreibungen',
-        symbolWord: 'gut',
-        backgroundColor: NasiraColors.briefTopic,
-        onTap: () => _navigateTo(_BriefSchritt.beschreibungen),
-      ),
-      NasiraGridCell(
-        caption: 'Freies Schreiben',
-        icon: Icons.edit_outlined,
-        backgroundColor: NasiraColors.moduleDarkGreen,
-        textColor: Colors.white,
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const FreiesSchreibenScreen()),
-        ),
-      ),
-    ];
-
-    return Column(children: [
-      Expanded(
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: GridView.builder(
-            itemCount: cells.length,
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 140,
-              crossAxisSpacing: 6,
-              mainAxisSpacing: 6,
-              childAspectRatio: 0.85,
-            ),
-            itemBuilder: (_, i) => cells[i],
-          ),
-        ),
-      ),
-      _buildLeitfragenStrip(state, ['Über was möchtest du schreiben?']),
-    ]);
-  }
-
-  // ── Verabreden ───────────────────────────────────────────────────────────
-
-  Widget _buildVerabreden(NasiraAppState state) {
-    const mainPhrases = [
-      'Ich möchte dich gerne mal besuchen.',
-      'Kannst du mich mal besuchen?',
-      'Ich möchte dich gerne mal treffen.',
-      'Können wir uns mal treffen?',
-      'Wann können wir uns mal treffen?',
-    ];
-
-    final cells = <Widget>[
-      for (final phrase in mainPhrases)
-        NasiraGridCell(
-          caption: phrase,
-          symbolWord: _keyWord(phrase),
-          backgroundColor: phrase.endsWith('?')
-              ? NasiraColors.briefQuestion
-              : NasiraColors.briefSentence,
-          onTap: () => state.insertPhrase(phrase),
-        ),
-      NasiraGridCell(
-        caption: 'Wann',
-        symbolWord: 'Montag',
-        backgroundColor: NasiraColors.briefTopic,
-        onTap: () => _navigateTo(_BriefSchritt.verabredenWann),
-      ),
-      NasiraGridCell(
-        caption: 'Was',
-        symbolWord: 'spielen',
-        backgroundColor: NasiraColors.briefTopic,
-        onTap: () => _navigateTo(_BriefSchritt.verabredenWas),
-      ),
-      NasiraGridCell(
-        caption: 'Wo',
-        symbolWord: 'Haus',
-        backgroundColor: NasiraColors.briefTopic,
-        onTap: () => _navigateTo(_BriefSchritt.verabredenWo),
-      ),
-    ];
-
-    return Column(children: [
-      Expanded(
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: GridView.builder(
-            itemCount: cells.length,
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 140,
-              crossAxisSpacing: 6,
-              mainAxisSpacing: 6,
-              childAspectRatio: 0.85,
-            ),
-            itemBuilder: (_, i) => cells[i],
-          ),
-        ),
-      ),
-      _buildLeitfragenStrip(state, ['Verabreden']),
-    ]);
-  }
-
-  // ── Über dich und mich ───────────────────────────────────────────────────
-
-  Widget _buildUberDichUndMich(NasiraAppState state) {
-    const subPages = [
-      ('Über dich',  _BriefSchritt.uberDich,   'du'),
-      ('Über mich',  _BriefSchritt.uberMich,    'ich'),
-      ('Trinken',    _BriefSchritt.trinken,      'trinken'),
-      ('Kleidung',   _BriefSchritt.kleidung,     'Kleidung'),
-      ('Hobby',      _BriefSchritt.hobby,         'spielen'),
-      ('Essen',      _BriefSchritt.essen,         'Essen'),
-      ('Haustiere',  _BriefSchritt.haustiere,     'Hund'),
-    ];
-
-    return Column(children: [
-      Expanded(child: _buildGrid(
-        itemCount: subPages.length,
-        builder: (i) => NasiraGridCell(
-          caption: subPages[i].$1,
-          symbolWord: subPages[i].$3,
-          backgroundColor: NasiraColors.briefTopic,
-          onTap: () => _navigateTo(subPages[i].$2),
-        ),
-      )),
-      _buildLeitfragenStrip(state, ['Über dich und mich']),
-    ]);
-  }
-
-  Widget _buildUberDich(NasiraAppState state) {
-    const fragen = [
-      'Wie alt bist du?',
-      'Wann hast du Geburtstag?',
-      'Wo wohnst du?',
-      'Wo gehst du zur Schule?',
-      'Wo arbeitest du?',
-      'Was arbeitest du?',
-      'Hast du Geschwister?',
-      'Hast du ein Haustier?',
-      'Welche Musik hörst du gerne?',
-      'Was ist deine Lieblingsfarbe?',
-      'Was ist deine Lieblingssendung?',
-      'Was ist dein Lieblingsessen?',
-      'Was ist dein Lieblingsfach?',
-    ];
-    return Column(children: [
-      Expanded(child: _buildGrid(
-        itemCount: fragen.length,
-        builder: (i) => NasiraGridCell(
-          caption: fragen[i],
-          symbolWord: _keyWord(fragen[i]),
-          backgroundColor: NasiraColors.briefQuestion,
-          onTap: () => state.insertPhrase(fragen[i]),
-        ),
-      )),
-      _buildLeitfragenStrip(state, ['Fragen über die andere Person']),
-    ]);
-  }
-
-  Widget _buildUberMich(NasiraAppState state) {
-    const saetze = [
-      ('Ich bin xx Jahre alt',                  'Jahr'),
-      ('Ich habe am xx Geburtstag',             'Geburtstag'),
-      ('Ich wohne in xx',                       'wohnen'),
-      ('Ich gehe in xx zur Schule',             'Schule'),
-      ('Ich habe xx Schwestern und xx Brüder',  'Geschwister'),
-      ('Sie heißen xx / Er heißt xx',           'Name'),
-      ('Ich habe ein xx (Haustier)',             'Haustier'),
-      ('Meine Lieblingsfarbe ist xxx',          'Farbe'),
-      ('Meine Lieblingssendung ist xx',         'fernsehen'),
-      ('Mein Lieblingsessen ist xx',            'Essen'),
-      ('Meine Lieblingsmusik ist xxx',          'Musik'),
-      ('Mein Lieblingsfach ist xxx',            'Schule'),
-      ('Mein Hobby ist xx',                     'spielen'),
-    ];
-    return Column(children: [
-      Expanded(child: _buildGrid(
-        itemCount: saetze.length,
-        builder: (i) => NasiraGridCell(
-          caption: saetze[i].$1,
-          symbolWord: saetze[i].$2,
-          backgroundColor: NasiraColors.briefSentence,
-          onTap: () => state.insertPhrase(saetze[i].$1),
-        ),
-      )),
-      _buildLeitfragenStrip(state, ['Über dich selbst']),
-    ]);
-  }
-
-  // ── Wünsche und Danken ───────────────────────────────────────────────────
-
-  Widget _buildWuenscheUndDanken(NasiraAppState state) {
-    const subPages = [
-      ('Wünschen', _BriefSchritt.wuenschen, 'wünschen'),
-      ('Bedanken', _BriefSchritt.bedanken,  'danke'),
-    ];
-    return Column(children: [
-      Expanded(child: _buildGrid(
-        itemCount: subPages.length,
-        builder: (i) => NasiraGridCell(
-          caption: subPages[i].$1,
-          symbolWord: subPages[i].$3,
-          backgroundColor: NasiraColors.briefTopic,
-          onTap: () => _navigateTo(subPages[i].$2),
-        ),
-      )),
-      _buildLeitfragenStrip(state, ['Wünsche und Danken']),
-    ]);
-  }
-
-  // ── Sonstiges ────────────────────────────────────────────────────────────
-
-  Widget _buildSonstiges(NasiraAppState state) {
-    const subPages = [
-      ('Wetter',     _BriefSchritt.wetter,     'Wetter'),
-      ('Schule',     _BriefSchritt.schule,     'Schule'),
-      ('Gesundheit', _BriefSchritt.gesundheit, 'krank'),
-    ];
-    return Column(children: [
-      Expanded(child: _buildGrid(
-        itemCount: subPages.length,
-        builder: (i) => NasiraGridCell(
-          caption: subPages[i].$1,
-          symbolWord: subPages[i].$3,
-          backgroundColor: NasiraColors.briefTopic,
-          onTap: () => _navigateTo(subPages[i].$2),
-        ),
-      )),
-      _buildLeitfragenStrip(state, ['Sonstiges Themen']),
-    ]);
-  }
-
-  // ── Gesundheit ───────────────────────────────────────────────────────────
-
-  Widget _buildGesundheit(NasiraAppState state) {
-    const sentences = [
-      'Mir geht es besser.',
-      'Mir geht es nicht besser.',
-      'Ich bin wieder gesund.',
-      'Geht es dir besser?',
-      'Geht es dir noch nicht besser?',
-      'Bist du wieder gesund?',
-    ];
-    return Column(children: [
-      Expanded(child: _buildGrid(
-        itemCount: sentences.length,
-        builder: (i) => NasiraGridCell(
-          caption: sentences[i],
-          symbolWord: _keyWord(sentences[i]),
-          backgroundColor: sentences[i].endsWith('?')
-              ? NasiraColors.briefQuestion
-              : NasiraColors.briefSentence,
-          onTap: () => state.insertPhrase(sentences[i]),
-        ),
-      )),
-      _buildLeitfragenStrip(state, ['Wie geht es dir gesundheitlich?']),
-    ]);
-  }
-
-  // ── Thema-Seite (generisch) ───────────────────────────────────────────────
-
-  Widget _buildThemaPage(NasiraAppState state, BriefThemaConfig config) {
-    final List<Widget> cells = [];
-
-    for (final pb in config.phraseButtons) {
-      final isQuestion = pb.label.endsWith('?');
-      cells.add(NasiraGridCell(
-        caption: pb.label,
-        symbolWord: _keyWord(pb.label),
-        backgroundColor: isQuestion
-            ? NasiraColors.briefQuestion
-            : NasiraColors.briefSentence,
-        onTap: () => state.insertPhrase(pb.insertText),
-      ));
-    }
-
-    if (config.phraseButtons.isNotEmpty) {
-      cells.add(NasiraGridCell(
-        caption: 'und',
-        symbolWord: 'und',
-        backgroundColor: NasiraColors.briefNeutral,
-        textColor: NasiraColors.textDark,
-        onTap: () => state.insertPhrase('und'),
-      ));
-      cells.add(NasiraGridCell(
-        caption: 'nicht',
-        symbolWord: 'nicht',
-        backgroundColor: NasiraColors.briefNeutral,
-        textColor: NasiraColors.textDark,
-        onTap: () => state.insertPhrase('nicht'),
-      ));
-    }
-
-    for (final wort in config.woerter) {
-      cells.add(NasiraGridCell(
-        caption: wort.text,
-        symbolWord: wort.symbolWord ?? wort.text,
-        backgroundColor: NasiraColors.briefTopic,
-        onTap: () => state.insertPhrase(wort.text),
-      ));
-    }
-
-    return Column(children: [
-      Expanded(
-        child: Padding(
-          padding: const EdgeInsets.all(8),
-          child: GridView.builder(
-            itemCount: cells.length,
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 140,
-              crossAxisSpacing: 6,
-              mainAxisSpacing: 6,
-              childAspectRatio: 0.85,
-            ),
-            itemBuilder: (_, i) => cells[i],
-          ),
-        ),
-      ),
-      _buildLeitfragenStrip(state, [config.leitfrage]),
-    ]);
-  }
-
-  // ── Ende ─────────────────────────────────────────────────────────────────
-
-  Widget _buildEnde(NasiraAppState state) {
-    const phrases = [
-      'Ich hoffe, wir sehen uns bald wieder.',
-      'Lass mal wieder von dir hören.',
-      'Ich freue mich schon auf deine Antwort!',
-      'Schreib bald zurück!',
-      'Lass es dir gut gehen!',
-      'So, ich muss jetzt aufhören.',
-      'Alles Gute.',
-      'Bis bald.',
-      'Ich umarme dich herzlich.',
-    ];
-    return Column(children: [
-      Expanded(child: _buildGrid(
-        itemCount: phrases.length,
-        builder: (i) => NasiraGridCell(
-          caption: phrases[i],
-          symbolWord: _keyWord(phrases[i]),
-          backgroundColor: NasiraColors.briefSentence,
-          onTap: () => state.insertPhrase(phrases[i]),
-        ),
-      )),
-      _buildLeitfragenStrip(state, ['Wie möchtest du den Brief beenden?']),
-    ]);
-  }
-
-  // ── Ende Grüße ───────────────────────────────────────────────────────────
+  // ── Ende Grüße (bleibt hardcodiert – Grid6 hat Variablen) ────────────────
 
   Widget _buildEndeGruesse(NasiraAppState state) {
     const gruesse = [
@@ -1040,7 +773,11 @@ class _BriefScreenState extends State<BriefScreen> {
 
   // ── Leitfragen-Streifen ──────────────────────────────────────────────────
 
-  Widget _buildLeitfragenStrip(NasiraAppState state, List<String> fragen) {
+  Widget _buildLeitfragenStrip(
+    NasiraAppState state,
+    List<String> fragen, {
+    VoidCallback? onEdit,
+  }) {
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
       child: SizedBox(
@@ -1054,6 +791,24 @@ class _BriefScreenState extends State<BriefScreen> {
                   caption: fragen[i],
                   backgroundColor: NasiraColors.briefQuestion,
                   fontSize: 11,
+                ),
+              ),
+            ],
+            if (onEdit != null) ...[
+              const SizedBox(width: 6),
+              SizedBox(
+                width: 44,
+                child: Material(
+                  color: NasiraColors.navGreen,
+                  borderRadius: BorderRadius.circular(8),
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: onEdit,
+                    child: const Center(
+                      child: Icon(Icons.edit_outlined,
+                          color: Colors.white, size: 22),
+                    ),
+                  ),
                 ),
               ),
             ],

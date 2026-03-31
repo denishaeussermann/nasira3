@@ -4,10 +4,15 @@ import 'package:provider/provider.dart';
 import '../nasira_app_state.dart';
 import '../nasira_repository.dart';
 import '../models/models.dart';
+import '../services/grid_override_service.dart';
 import '../theme/nasira_colors.dart';
+import '../widgets/grid_layout_editor.dart';
 import '../widgets/nasira_grid_cell.dart';
 import '../widgets/nasira_module_header.dart';
 import 'freies_schreiben_screen.dart';
+
+/// Stabiler Schlüssel für GridOverrideService-Einträge.
+const _kEinkaufPageKey = 'Einkaufen';
 
 // ── Einkaufen ────────────────────────────────────────────────────────────────
 //
@@ -115,10 +120,122 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
   String? _activeKey;
   int _page = 0;
 
-  static const _cols       = 6;
-  static const _rows       = 5; // 3 Kat-Reihen + 2 Artikel-Reihen
-  static const _totalCells = _cols * _rows; // 30
-  static const _pageSize   = 10; // 5 Artikel-Slots × 2 Reihen
+  static const _cols     = 6;
+  static const _rows     = 5; // 3 Kat-Reihen + 2 Artikel-Reihen
+  static const _pageSize = 10; // 5 Artikel-Slots × 2 Reihen
+
+  // ── Editor ──────────────────────────────────────────────────────────────
+  bool _editorOpen = false;
+  final _overrideService = GridOverrideService();
+  /// Effektive Seite: kanonische Zellen + gespeicherte Layout-Overrides.
+  late GridPage _effectivePage;
+  /// Gecachte NasiraData (aus FutureBuilder) für Stack-Rendering.
+  NasiraData? _cachedData;
+
+  @override
+  void initState() {
+    super.initState();
+    _effectivePage = _buildCanonicalPage();
+    _overrideService.load().then((_) {
+      if (mounted) setState(_applyOverrides);
+    });
+  }
+
+  // ── Kanonische GridPage (6 × 5, 30 Zellen mit stabilen symbolStem-Keys) ─
+
+  /// symbolStem-Kodierung:
+  ///   __mod_123__        → Modifier-Zelle "123"
+  ///   __mod_Einheit__    → Modifier-Zelle "Einheit"
+  ///   __mod_Eigenschaft__→ Modifier-Zelle "Eigenschaft"
+  ///   __kat_N__          → Kategorie-Index N (0–14)
+  ///   __item_N__         → Artikel-Slot N (0–9)
+  ///   __nav_fwd__        → Navigation vorwärts
+  ///   __nav_bak__        → Navigation zurück
+  GridPage _buildCanonicalPage() {
+    const modKeys = ['123', 'Einheit', 'Eigenschaft'];
+    return GridPage(
+      name: _kEinkaufPageKey,
+      columns: _cols,
+      rows: _rows,
+      backgroundColor: const Color(0xFF1E2E1E),
+      wordList: const [],
+      cells: [
+        // Modifier (Spalte 0, Zeilen 0-2)
+        for (int r = 0; r < 3; r++)
+          GridCell(
+            x: 0, y: r,
+            caption: modKeys[r],
+            symbolStem: '__mod_${modKeys[r]}__',
+            style: GridCellStyle.actionNav,
+            type: GridCellType.normal,
+            commands: const [],
+          ),
+        // Kategorien (Spalten 1–5, Zeilen 0–2)
+        for (int i = 0; i < _kategorien.length; i++)
+          GridCell(
+            x: 1 + i % 5, y: i ~/ 5,
+            caption: _kategorien[i].label,
+            symbolStem: '__kat_${i}__',
+            style: GridCellStyle.actionNav,
+            type: GridCellType.normal,
+            commands: const [],
+          ),
+        // Artikel-Slots (Spalten 0–4, Zeilen 3–4)
+        for (int i = 0; i < _pageSize; i++)
+          GridCell(
+            x: i % 5, y: 3 + i ~/ 5,
+            symbolStem: '__item_${i}__',
+            style: GridCellStyle.wortliste,
+            type: GridCellType.autoContent,
+            commands: const [],
+          ),
+        // Navigation (Spalte 5, Zeilen 3–4)
+        const GridCell(
+          x: 5, y: 3,
+          caption: 'Weitere\nVorhersagen',
+          symbolStem: '__nav_fwd__',
+          style: GridCellStyle.weitereWoerter,
+          type: GridCellType.normal,
+          commands: [],
+        ),
+        const GridCell(
+          x: 5, y: 4,
+          caption: 'Weitere\nVorhersagen',
+          symbolStem: '__nav_bak__',
+          style: GridCellStyle.weitereWoerter,
+          type: GridCellType.normal,
+          commands: [],
+        ),
+      ],
+    );
+  }
+
+  /// Wendet Layout- und Größen-Overrides des GridOverrideService an.
+  void _applyOverrides() {
+    final layoutOv = _overrideService.getLayoutOverrides(_kEinkaufPageKey);
+    final sizeOv   = _overrideService.getGridSize(_kEinkaufPageKey);
+    final canonical = _buildCanonicalPage();
+    final cells = canonical.cells.map((c) {
+      final lOv = layoutOv?['${c.x},${c.y}'];
+      if (lOv == null) return c;
+      return GridCell(
+        x:       lOv['x']       ?? c.x,
+        y:       lOv['y']       ?? c.y,
+        colSpan: lOv['colSpan'] ?? c.colSpan,
+        rowSpan: lOv['rowSpan'] ?? c.rowSpan,
+        caption: c.caption, symbolStem: c.symbolStem,
+        style: c.style, type: c.type, commands: c.commands,
+      );
+    }).toList();
+    _effectivePage = GridPage(
+      name: canonical.name,
+      columns: sizeOv?['columns'] ?? canonical.columns,
+      rows:    sizeOv?['rows']    ?? canonical.rows,
+      backgroundColor: canonical.backgroundColor,
+      cells: cells,
+      wordList: const [],
+    );
+  }
 
   // ── Daten der aktuellen Auswahl ──────────────────────────────────────────
 
@@ -156,6 +273,29 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<NasiraAppState>();
+
+    // ── Editor-Modus ────────────────────────────────────────────────────────
+    if (_editorOpen) {
+      // autoMap: Artikel-Slots → aktuelles Seiten-Item (für echte Vorschau)
+      final items = _pageItems;
+      return Scaffold(
+        backgroundColor: NasiraColors.briefBg,
+        body: SafeArea(
+          child: GridLayoutEditor(
+            page:     _effectivePage,
+            rawPage:  _buildCanonicalPage(),
+            pageName: _kEinkaufPageKey,
+            pageColor: const Color(0xFF1E2E1E),
+            overrideService: _overrideService,
+            cellBuilder: (cell) => _buildCellForEditor(state, cell, items),
+            onDismiss: () => setState(() => _editorOpen = false),
+            onChanged: () => setState(_applyOverrides),
+          ),
+        ),
+      );
+    }
+
+    // ── Normal-Modus ─────────────────────────────────────────────────────────
     return Scaffold(
       backgroundColor: NasiraColors.briefBg,
       body: SafeArea(
@@ -164,6 +304,7 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
             NasiraModuleHeader(
               controller: state.textController,
               accentColor: NasiraColors.navGreen,
+              onMenu: () => setState(() => _editorOpen = true),
               onBack: () {
                 if (_activeKey != null) {
                   setState(() { _activeKey = null; _page = 0; });
@@ -179,7 +320,8 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
                   if (!snap.hasData) {
                     return const Center(child: CircularProgressIndicator());
                   }
-                  return _buildGrid(state, snap.data!.data);
+                  _cachedData = snap.data!.data;
+                  return _buildStackGrid(state);
                 },
               ),
             ),
@@ -189,63 +331,156 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
     );
   }
 
-  // ── Einheitliches 6 × 5-Grid ─────────────────────────────────────────────
+  // ── Stack-basiertes Grid (ersetzt GridView.builder; Overrides anwendbar) ─
 
-  Widget _buildGrid(NasiraAppState state, NasiraData data) {
-    return LayoutBuilder(builder: (ctx, box) {
-      const gap = 4.0;
-      final cellW = (box.maxWidth  - gap * (_cols - 1) - 8) / _cols;
-      final cellH = (box.maxHeight - gap * (_rows - 1) - 8) / _rows;
-      final ratio = cellH > 0 ? cellW / cellH : 1.0;
-
-      return GridView.builder(
-        physics: const NeverScrollableScrollPhysics(),
-        padding: const EdgeInsets.all(4),
-        itemCount: _totalCells,
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: _cols,
-          crossAxisSpacing: gap,
-          mainAxisSpacing: gap,
-          childAspectRatio: ratio,
-        ),
-        itemBuilder: (ctx, i) => _cellAt(i, state, data),
-      );
-    });
+  Widget _buildStackGrid(NasiraAppState state) {
+    final page = _effectivePage;
+    final cols = page.columns;
+    final rows = page.rows;
+    return Container(
+      color: page.backgroundColor,
+      child: LayoutBuilder(builder: (ctx, box) {
+        const gap = 4.0;
+        const pad = 4.0;
+        final cellW = (box.maxWidth  - gap * (cols - 1) - pad * 2) / cols;
+        final cellH = (box.maxHeight - gap * (rows - 1) - pad * 2) / rows;
+        return Stack(
+          children: [
+            for (final cell in page.cells)
+              Positioned(
+                left:   pad + cell.x * (cellW + gap),
+                top:    pad + cell.y * (cellH + gap),
+                width:  cell.colSpan * (cellW + gap) - gap,
+                height: cell.rowSpan * (cellH + gap) - gap,
+                child: _renderCell(cell, state),
+              ),
+          ],
+        );
+      }),
+    );
   }
 
-  // ── Zellen-Router ─────────────────────────────────────────────────────────
+  // ── Zellen-Router: symbolStem → passendes Widget ──────────────────────────
 
-  Widget _cellAt(int i, NasiraAppState state, NasiraData data) {
-    final row = i ~/ _cols;
-    final col = i % _cols;
+  Widget _renderCell(GridCell cell, NasiraAppState state) {
+    final stem = cell.symbolStem ?? '';
 
-    // Modifier (Spalte 0, Reihen 0-2)
-    if (col == 0 && row < 3) {
-      const keys  = ['123', 'Einheit', 'Eigenschaft'];
-      const icons = [Icons.tag, Icons.info_outline, Icons.tune_outlined];
-      return _buildModifierCell(keys[row], icons[row]);
+    if (stem.startsWith('__mod_')) {
+      final key = stem.substring(6, stem.length - 2);
+      const icons = <String, IconData>{
+        '123': Icons.tag,
+        'Einheit': Icons.info_outline,
+        'Eigenschaft': Icons.tune_outlined,
+      };
+      return _buildModifierCell(key, icons[key] ?? Icons.tag);
     }
 
-    // Weitere Vorhersagen (Spalte 5, Reihen 3-4)
-    if (col == 5 && row >= 3) {
-      return _buildNavCell(forward: row == 3);
+    if (stem.startsWith('__kat_')) {
+      final idx = int.tryParse(stem.substring(6, stem.length - 2)) ?? 0;
+      if (idx < _kategorien.length) return _buildCatCell(idx, state, _cachedData);
+      return _buildEmptySlot();
     }
 
-    // Kategorie-Zellen (Spalten 1-5, Reihen 0-2)
-    if (row < 3) {
-      final katIdx = row * 5 + (col - 1);
-      if (katIdx < _kategorien.length) {
-        return _buildCatCell(katIdx, state, data);
+    if (stem.startsWith('__item_')) {
+      final slotIdx = int.tryParse(stem.substring(7, stem.length - 2)) ?? 0;
+      final items = _pageItems;
+      if (slotIdx < items.length) {
+        return _buildItemCell(items[slotIdx], state, _cachedData);
       }
       return _buildEmptySlot();
     }
 
-    // Artikel-Slots (Spalten 0-4, Reihen 3-4)
-    final slotIdx = (row - 3) * 5 + col;
-    final items   = _pageItems;
-    if (slotIdx < items.length) {
-      return _buildItemCell(items[slotIdx], state, data);
+    if (stem == '__nav_fwd__') return _buildNavCell(forward: true);
+    if (stem == '__nav_bak__') return _buildNavCell(forward: false);
+
+    return _buildEmptySlot();
+  }
+
+  // ── cellBuilder für GridLayoutEditor (IgnorePointer kommt vom Editor) ────
+
+  Widget _buildCellForEditor(
+      NasiraAppState state, GridCell cell, List<String> items) {
+    final stem = cell.symbolStem ?? '';
+
+    if (stem.startsWith('__mod_')) {
+      final key = stem.substring(6, stem.length - 2);
+      const icons = <String, IconData>{
+        '123': Icons.tag,
+        'Einheit': Icons.info_outline,
+        'Eigenschaft': Icons.tune_outlined,
+      };
+      return NasiraGridCell(
+        caption: key,
+        icon: icons[key] ?? Icons.tag,
+        backgroundColor: _activeKey == key
+            ? NasiraColors.navGreen
+            : NasiraColors.moduleDarkGreen,
+        textColor: Colors.white,
+        fontSize: 11,
+      );
     }
+
+    if (stem.startsWith('__kat_')) {
+      final idx = int.tryParse(stem.substring(6, stem.length - 2)) ?? 0;
+      if (idx >= _kategorien.length) return _buildEmptySlot();
+      final kat = _kategorien[idx];
+      final resolvedPath = state.assetResolver.isReady
+          ? state.assetResolver.resolve('${kat.symbolWord}.jpg')
+          : null;
+      return NasiraGridCell(
+        caption: kat.label,
+        assetPath: resolvedPath,
+        symbolWord: resolvedPath == null ? kat.symbolWord : null,
+        icon: kat.icon,
+        backgroundColor: _activeKey == kat.label
+            ? NasiraColors.navGreen
+            : NasiraColors.moduleDarkGreen,
+        textColor: Colors.white,
+        fontSize: 10,
+      );
+    }
+
+    if (stem.startsWith('__item_')) {
+      final slotIdx = int.tryParse(stem.substring(7, stem.length - 2)) ?? 0;
+      if (slotIdx >= items.length) return _buildEmptySlot();
+      final item = items[slotIdx];
+      final resolvedPath = state.assetResolver.isReady
+          ? state.assetResolver.resolve('$item.jpg')
+          : null;
+      if (_activeKey == '123') {
+        return Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          elevation: 2,
+          child: Center(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text(item,
+                    style: const TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w400,
+                        color: NasiraColors.textDark)),
+              ),
+            ),
+          ),
+        );
+      }
+      return NasiraGridCell(
+        caption: item,
+        assetPath: resolvedPath,
+        symbolWord: resolvedPath == null ? item : null,
+        backgroundColor: NasiraColors.cellWhite,
+        textColor: NasiraColors.textDark,
+        fontSize: 11,
+        borderRadius: 10,
+      );
+    }
+
+    if (stem == '__nav_fwd__') return _buildNavCell(forward: true);
+    if (stem == '__nav_bak__') return _buildNavCell(forward: false);
+
     return _buildEmptySlot();
   }
 
@@ -265,7 +500,7 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
 
   // ── Kategorie-Kachel ──────────────────────────────────────────────────────
 
-  Widget _buildCatCell(int katIdx, NasiraAppState state, NasiraData data) {
+  Widget _buildCatCell(int katIdx, NasiraAppState state, NasiraData? data) {
     final kat = _kategorien[katIdx];
 
     // Freies Schreiben → navigiert zum gleichnamigen Modul
@@ -284,8 +519,12 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
     }
 
     final isActive = _activeKey == kat.label;
-    final sym  = state.cachedLookup(data, kat.symbolWord);
-    final path = sym != null ? state.assetResolver.resolveForSymbol(sym) : null;
+    final sym  = data != null ? state.cachedLookup(data, kat.symbolWord) : null;
+    final path = sym != null
+        ? state.assetResolver.resolveForSymbol(sym)
+        : (state.assetResolver.isReady
+            ? state.assetResolver.resolve('${kat.symbolWord}.jpg')
+            : null);
     return NasiraGridCell(
       caption: kat.label,
       assetPath: path,
@@ -300,11 +539,15 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
 
   // ── Artikel-Kachel ────────────────────────────────────────────────────────
 
-  Widget _buildItemCell(String item, NasiraAppState state, NasiraData data) {
+  Widget _buildItemCell(String item, NasiraAppState state, NasiraData? data) {
     if (_activeKey == '123') return _buildNumberCell(item, state);
 
-    final sym  = state.cachedLookup(data, item);
-    final path = sym != null ? state.assetResolver.resolveForSymbol(sym) : null;
+    final sym  = data != null ? state.cachedLookup(data, item) : null;
+    final path = sym != null
+        ? state.assetResolver.resolveForSymbol(sym)
+        : (state.assetResolver.isReady
+            ? state.assetResolver.resolve('$item.jpg')
+            : null);
     return NasiraGridCell(
       caption: item,
       assetPath: path,
@@ -366,9 +609,13 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
         onTap: canGo ? (forward ? _nextPage : _prevPage) : null,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.center,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: [
               Text(
                 'Weitere\nVorhersagen',
                 textAlign: TextAlign.center,
@@ -399,6 +646,7 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
                       ],
               ),
             ],
+            ),
           ),
         ),
       ),

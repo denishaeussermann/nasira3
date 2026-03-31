@@ -85,6 +85,34 @@ class AssetResolverService {
     return resolve(mapped.symbol.assetPath);
   }
 
+  /// Durchsucht alle bekannten Asset-Pfade nach [query] (Stem ohne Endung).
+  ///
+  /// Rückgabe: bis zu [limit] Pfade, sortiert Exakt → Präfix → Enthält.
+  List<String> search(String query, {int limit = 48}) {
+    if (!_ready || query.trim().isEmpty) return const [];
+    final q = query.trim().toLowerCase().replaceAll(' ', '_');
+
+    final exact    = <String>[];
+    final prefix   = <String>[];
+    final contains = <String>[];
+
+    for (final entry in _assetPathsByBasename.entries) {
+      final base = entry.key; // z. B. "frosch2.jpg"
+      final dot  = base.lastIndexOf('.');
+      final stem = dot >= 0 ? base.substring(0, dot) : base;
+      if (stem == q) {
+        exact.addAll(entry.value);
+      } else if (stem.startsWith(q)) {
+        prefix.addAll(entry.value);
+      } else if (stem.contains(q)) {
+        contains.addAll(entry.value);
+      }
+    }
+
+    final results = [...exact, ...prefix, ...contains];
+    return results.length > limit ? results.sublist(0, limit) : results;
+  }
+
   // ── Interna ───────────────────────────────────────────────────────────
 
   String _normalizePath(String path) {

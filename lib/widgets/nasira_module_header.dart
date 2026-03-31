@@ -33,6 +33,13 @@ class NasiraModuleHeader extends StatefulWidget {
   /// null → Drucken-Platzhalter.
   final VoidCallback? onForward;
 
+  /// Falls gesetzt: drittes Recht-Button (Hamburger ≡) für Seiteneditor.
+  final VoidCallback? onMenu;
+
+  /// Wenn true, wird der Vorwärts-Pfeil als Oval (Ellipse) dargestellt —
+  /// signalisiert „Zurück zum Inhalts-Hub" statt sequentiellem Vorwärts.
+  final bool isForwardOval;
+
   /// FocusNode für USB-Tastatureingabe (FreiesSchreiben).
   final FocusNode? focusNode;
   final bool readOnly;
@@ -44,6 +51,8 @@ class NasiraModuleHeader extends StatefulWidget {
     required this.accentColor,
     this.onBack,
     this.onForward,
+    this.onMenu,
+    this.isForwardOval = false,
     this.focusNode,
     this.readOnly = true,
     this.autofocus = false,
@@ -58,7 +67,6 @@ class _NasiraModuleHeaderState extends State<NasiraModuleHeader> {
   // ── Alles-löschen mit Bestätigung ─────────────────────────────────────────
 
   Future<void> _confirmClearAll() async {
-    final state = context.read<NasiraAppState>();
     Timer? timer;
 
     final confirmed = await showDialog<bool>(
@@ -148,7 +156,7 @@ class _NasiraModuleHeaderState extends State<NasiraModuleHeader> {
 
           const SizedBox(width: 2),
 
-          // ── Rechts: Wort löschen + Drucken / Vorwärts ───────────────────
+          // ── Rechts: Wort löschen + Vorwärts/Drucken + ggf. Menü ────────
           SizedBox(
             width: 80,
             child: Column(
@@ -161,12 +169,23 @@ class _NasiraModuleHeaderState extends State<NasiraModuleHeader> {
                     onLongPress: _confirmClearAll,
                   ),
                 ),
+                if (widget.onMenu != null) ...[
+                  const SizedBox(height: 2),
+                  Expanded(
+                    child: _ModuleButton(
+                      icon: Icons.menu_rounded,
+                      color: color,
+                      onTap: widget.onMenu,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 2),
                 Expanded(
                   child: widget.onForward != null
                       ? _ModuleButton(
                           icon: Icons.arrow_forward_rounded,
                           color: color,
+                          isOval: widget.isForwardOval,
                           onTap: widget.onForward,
                         )
                       : _ModuleButton(
@@ -195,6 +214,7 @@ class _ModuleButton extends StatelessWidget {
   final IconData icon;
   final String? label;
   final Color color;
+  final bool isOval;
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
 
@@ -202,15 +222,20 @@ class _ModuleButton extends StatelessWidget {
     required this.icon,
     required this.color,
     this.label,
+    this.isOval = false,
     this.onTap,
     this.onLongPress,
   });
 
   @override
   Widget build(BuildContext context) {
+    final radius = isOval ? BorderRadius.circular(1000) : null;
     return Material(
       color: color,
+      borderRadius: radius,
+      clipBehavior: isOval ? Clip.antiAlias : Clip.none,
       child: InkWell(
+        borderRadius: radius,
         onTap: onTap,
         onLongPress: onLongPress,
         child: Column(
