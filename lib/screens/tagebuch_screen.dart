@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../nasira_app_state.dart';
@@ -7,7 +9,7 @@ import '../services/grid_override_service.dart';
 import '../theme/nasira_colors.dart';
 import '../widgets/grid_layout_editor.dart';
 import '../widgets/nasira_grid_cell.dart';
-import '../widgets/nasira_module_header.dart';
+import '../widgets/nasira_text_workspace.dart';
 
 // ── Hilfsfunktion: Hauptwort für Symbol-Lookup ────────────────────────────────
 
@@ -169,6 +171,41 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
     }
   }
 
+  Future<void> _confirmClearAll() async {
+    Timer? timer;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        timer = Timer(const Duration(seconds: 3), () {
+          if (ctx.mounted) Navigator.pop(ctx, false);
+        });
+        return AlertDialog(
+          title: const Text('Alles löschen?'),
+          content: const Text(
+            'Soll der gesamte Text wirklich gelöscht werden?\n'
+            '(Dialog schließt sich automatisch nach 3 Sekunden.)',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Nein'),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Ja, löschen'),
+            ),
+          ],
+        );
+      },
+    );
+    timer?.cancel();
+    if ((confirmed ?? false) && mounted) {
+      context.read<NasiraAppState>().clearText();
+    }
+  }
+
   // ── Symbol-Auflösung ────────────────────────────────────────────────────────
 
   String? _resolveSymbol(NasiraAppState state, String? stem) {
@@ -223,49 +260,31 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
     return Scaffold(
       backgroundColor: NasiraColors.briefBg,
       body: SafeArea(
-        child: Column(
-          children: [
-            NasiraModuleHeader(
-              controller:  state.textController,
-              accentColor: NasiraColors.navGreen,
-              onBack:      _zurueck,
-              onMenu:      page != null
-                  ? () => setState(() => _editorOpen = true)
-                  : null,
-            ),
-            Expanded(
-              child: page != null
-                  ? _buildExactGrid(state, page)
-                  : const Center(child: CircularProgressIndicator()),
-            ),
-          ],
-        ),
+        child: page != null
+            ? _buildExactGrid(state, page)
+            : const Center(child: CircularProgressIndicator()),
       ),
     );
   }
 
-  // ── Grid-Rendering (identisch zu BriefScreen) ────────────────────────────
+  // ── Grid-Rendering: gesamte Seite 1:1 aus XML ────────────────────────────
 
-  /// Stack-basiertes Grid: Workspace-Zeile überspringen, Rest exakt positionieren.
   Widget _buildExactGrid(NasiraAppState state, GridPage page) {
-    final wsCell = page.cells
-        .where((c) => c.type == GridCellType.workspace)
-        .firstOrNull;
-    final firstContent = wsCell != null ? wsCell.y + wsCell.rowSpan : 0;
-    final contentRows  = page.rows - firstContent;
-    if (contentRows <= 0) return const SizedBox.shrink();
+    if (page.rows <= 0) return const SizedBox.shrink();
 
-    final contentCells = page.cells
-        .where((c) => c.type != GridCellType.workspace && c.y >= firstContent)
+    final workspaceCells = page.cells
+        .where((c) => c.type == GridCellType.workspace)
         .toList();
 
-    final autoContent = contentCells
+    final autoContent = page.cells
         .where((c) => c.type == GridCellType.autoContent)
         .toList()
       ..sort((a, b) => a.y != b.y ? a.y.compareTo(b.y) : a.x.compareTo(b.x));
 
-    final regularCells = contentCells
-        .where((c) => c.type != GridCellType.autoContent)
+    final regularCells = page.cells
+        .where((c) =>
+            c.type != GridCellType.workspace &&
+            c.type != GridCellType.autoContent)
         .toList();
 
     const gap = 3.0;
@@ -274,13 +293,21 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
       color: page.backgroundColor,
       child: LayoutBuilder(builder: (ctx, box) {
         final cellW = box.maxWidth  / page.columns;
-        final cellH = box.maxHeight / contentRows;
+        final cellH = box.maxHeight / page.rows;
 
         return Stack(children: [
+          for (final cell in workspaceCells)
+            Positioned(
+              left:   cell.x * cellW + gap / 2,
+              top:    cell.y * cellH + gap / 2,
+              width:  cell.colSpan * cellW - gap,
+              height: cell.rowSpan * cellH - gap,
+              child:  _buildWorkspaceCell(state),
+            ),
           for (final cell in regularCells)
             Positioned(
               left:   cell.x * cellW + gap / 2,
-              top:    (cell.y - firstContent) * cellH + gap / 2,
+              top:    cell.y * cellH + gap / 2,
               width:  cell.colSpan * cellW - gap,
               height: cell.rowSpan * cellH - gap,
               child:  _buildRegularCell(state, cell, page, autoContent.length),
@@ -294,7 +321,7 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
                   : null;
               return Positioned(
                 left:   cell.x * cellW + gap / 2,
-                top:    (cell.y - firstContent) * cellH + gap / 2,
+                top:    cell.y * cellH + gap / 2,
                 width:  cell.colSpan * cellW - gap,
                 height: cell.rowSpan * cellH - gap,
                 child:  item != null
@@ -307,6 +334,12 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
     );
   }
 
+  Widget _buildWorkspaceCell(NasiraAppState state) => NasiraTextWorkspace(
+        controller: state.textController,
+        minHeight: 0,
+        maxHeight: double.infinity,
+      );
+
   Widget _buildRegularCell(
     NasiraAppState state,
     GridCell cell,
@@ -314,9 +347,11 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
     int acCount,
   ) {
     VoidCallback? onTap;
+    VoidCallback? onLongPress;
 
     if (cell.isDeleteWord) {
       onTap = state.deleteLastWord;
+      onLongPress = _confirmClearAll;
     } else if (cell.isBack) {
       onTap = _zurueck;
     } else if (cell.isHome) {
@@ -367,6 +402,7 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
       textColor:       cell.foregroundColor,
       fontSize:        cell.style.isOval ? 12 : 11,
       onTap:           onTap,
+      onLongPress:     onLongPress,
       borderRadius:    cell.style.isOval ? 100 : 7,
     );
 
