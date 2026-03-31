@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,7 +9,7 @@ import '../services/grid_override_service.dart';
 import '../theme/nasira_colors.dart';
 import '../widgets/grid_layout_editor.dart';
 import '../widgets/nasira_grid_cell.dart';
-import '../widgets/nasira_module_header.dart';
+import '../widgets/nasira_text_workspace.dart';
 import 'freies_schreiben_screen.dart';
 
 /// Stabiler Schlüssel für GridOverrideService-Einträge.
@@ -16,11 +17,13 @@ const _kEinkaufPageKey = 'Einkaufen';
 
 // ── Einkaufen ────────────────────────────────────────────────────────────────
 //
-// Einheitliches Grid 6 × 5 = 30 Zellen:
-//   Reihen 0-2, Spalte 0   → Modifier: 123 / Einheit / Eigenschaft
-//   Reihen 0-2, Spalten 1-5 → 15 Kategorien (5 × 3)
-//   Reihen 3-4, Spalten 0-4 → 10 Artikel-Slots (5 × 2, paginiert)
-//   Reihen 3-4, Spalte 5   → Weitere Vorhersagen (vor / zurück)
+// Einheitliches Grid 6 × 8 = 48 Zellen:
+//   Reihen 0-1, Spalten 0-5  → Header (Home / Workspace / DeleteWord)
+//   Reihen 2-4, Spalte 0     → Modifier: 123 / Einheit / Eigenschaft
+//   Reihen 2-4, Spalten 1-5  → 15 Kategorien (5 × 3)
+//   Reihen 5-7, Spalten 0-4  → 15 Artikel-Slots (5 × 3, paginiert)
+//   Reihe 5,    Spalte 5     → Weitere Vorhersagen vorwärts
+//   Reihe 7,    Spalte 5     → Weitere Vorhersagen rückwärts
 
 class _EinkaufKategorie {
   final String label;
@@ -34,14 +37,15 @@ class _EinkaufKategorie {
 const _kategorien = <_EinkaufKategorie>[
   // ── Reihe 0 (Spalten 1-5) ─────────────────────────────────────────────────
   _EinkaufKategorie('Obst', Icons.eco_outlined, 'Obst',
-      ['Apfel', 'Banane', 'Kiwi', 'Mandarine', 'Orange', 'Traube', 'Zitrone',
-       'Erdbeere', 'Birne', 'Melone']),
+      ['Apfel', 'Banane', 'Obst', 'Kiwi', 'Mandarine', 'Orange', 'Traube',
+       'Zitrone']),
   _EinkaufKategorie('Gemüse', Icons.grass_outlined, 'Gemüse',
       ['Brokkoli', 'Gurke', 'Karotte', 'Kartoffel', 'Paprika', 'Petersilie',
        'Pilze', 'Salat', 'Tomate', 'Zucchini', 'Zwiebel']),
   _EinkaufKategorie('Fleisch und Wurst', Icons.kebab_dining_outlined, 'Fleisch',
-      ['Fleisch', 'Fisch', 'Hähnchen', 'Hähnchenkeule', 'Wurst', 'Schinken',
-       'Hack', 'Schnitzel', 'Rindfleisch', 'Lamm', 'Geflügel', 'Steak']),
+      ['Fisch', 'Fleisch', 'Fleischküchle', 'Hack', 'Hähnchen', 'Hähnchenkeule',
+       'Lamm', 'Geflügel', 'Schnitzel', 'Geschnetzeltes', 'Rindfleisch', 'Wurst',
+       'Steak']),
   _EinkaufKategorie('Milchprodukte', Icons.local_cafe_outlined, 'Milch',
       ['Milch', 'Butter', 'Margarine', 'Käse', 'Joghurt', 'Quark', 'Sahne',
        'Buttermilch', 'saure Sahne', 'Schmand', 'Eis']),
@@ -50,7 +54,7 @@ const _kategorien = <_EinkaufKategorie>[
        'Spätzle']),
   // ── Reihe 1 (Spalten 1-5) ─────────────────────────────────────────────────
   _EinkaufKategorie('Backwaren', Icons.bakery_dining_outlined, 'Brot',
-      ['Brot', 'Brötchen', 'Toast', 'Brezel', 'Kuchen']),
+      ['Brot', 'Toast', 'Brötchen', 'Brezel', 'Kuchen', 'Süßes Stückchen']),
   _EinkaufKategorie('Würze', Icons.restaurant_menu_outlined, 'Salz',
       ['Salz', 'Pfeffer', 'Zucker', 'Öl', 'Essig', 'Senf', 'Ketchup',
        'Salatsoße', 'Gewürze', 'Brühe', 'Soße', 'Tomatensoße']),
@@ -61,8 +65,9 @@ const _kategorien = <_EinkaufKategorie>[
       ['Mehl', 'Müsli', 'Marmelade', 'Nutella', 'Cornflakes', 'Honig',
        'Fertiggerichte', 'Maultasche']),
   _EinkaufKategorie('Getränke', Icons.local_drink_outlined, 'Getränke',
-      ['Wasser', 'Sprudel', 'Apfelschorle', 'Apfelsaft', 'Orangensaft',
-       'Tee', 'Kaffee', 'Cola', 'Fanta', 'Limonade', 'Sekt', 'Bier', 'Wein']),
+      ['Tee', 'Kaba', 'Kaffee', 'Sprudel', 'Schorle', 'Apfelschorle',
+       'Apfelsaft', 'Orangensaft', 'Fanta', 'Spezi', 'Cola', 'Sekt', 'Bier',
+       'Wein']),
   // ── Reihe 2 (Spalten 1-5) ─────────────────────────────────────────────────
   _EinkaufKategorie('Haushalt', Icons.cleaning_services_outlined, 'Putzen',
       ['Spülmittel', 'Geschirrspülmittel', 'Waschpulver', 'Bodenreiniger',
@@ -74,9 +79,11 @@ const _kategorien = <_EinkaufKategorie>[
        'Zahnpasta', 'Gesichtscreme', 'Badezusatz', 'Pflaster', 'Sonnenschutz',
        'Taschentücher']),
   _EinkaufKategorie('Kleidung', Icons.checkroom_outlined, 'Kleidung',
-      ['Hose', 'T-Shirt', 'Strümpfe', 'Pullover', 'Kleid', 'Rock',
-       'Schlafanzug', 'Bluse', 'Hemd', 'Badeanzug', 'Badehose', 'Jacke',
-       'Mantel', 'Schuhe', 'Handschuhe', 'Schal', 'Mütze']),
+      ['Hose', 'T-shirt', 'Strümpfe', 'Pullover', 'Kleid', 'Rock',
+       'Schlafanzug', 'Bluse', 'Hemd', 'Badeanzug', 'Badehose', 'Bademantel',
+       'Unterhose', 'BH', 'Unterhemd', 'Schuhe', 'Sandalen', 'Sportschuhe',
+       'Stiefel', 'Handschuhe', 'Jacke', 'Mantel', 'Mütze', 'Hut', 'Schal',
+       'Gürtel', 'Brille', 'Schmuck', 'Uhr', 'Armband', 'Kette', 'Ring']),
   _EinkaufKategorie('Freies Schreiben', Icons.edit_note_rounded, 'schreiben', []),
   _EinkaufKategorie('mehr Einkaufen', Icons.add_shopping_cart_outlined, 'Einkaufen', []),
 ];
@@ -120,9 +127,11 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
   String? _activeKey;
   int _page = 0;
 
-  static const _cols     = 6;
-  static const _rows     = 5; // 3 Kat-Reihen + 2 Artikel-Reihen
-  static const _pageSize = 10; // 5 Artikel-Slots × 2 Reihen
+  static const _cols        = 6;
+  static const _headerRows  = 2; // Zeilen 0-1: Workspace / Home / DeleteWord
+  static const _contentRows = 6; // Zeilen 2-7: 3 Kat-Reihen + 3 Artikel-Reihen
+  static const _rows        = _headerRows + _contentRows; // = 8
+  static const _pageSize    = 15; // 5 Artikel-Slots × 3 Reihen
 
   // ── Editor ──────────────────────────────────────────────────────────────
   bool _editorOpen = false;
@@ -141,16 +150,16 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
     });
   }
 
-  // ── Kanonische GridPage (6 × 5, 30 Zellen mit stabilen symbolStem-Keys) ─
+  // ── Kanonische GridPage (6 × 8, 48 Zellen mit stabilen symbolStem-Keys) ─
 
   /// symbolStem-Kodierung:
   ///   __mod_123__        → Modifier-Zelle "123"
   ///   __mod_Einheit__    → Modifier-Zelle "Einheit"
   ///   __mod_Eigenschaft__→ Modifier-Zelle "Eigenschaft"
   ///   __kat_N__          → Kategorie-Index N (0–14)
-  ///   __item_N__         → Artikel-Slot N (0–9)
-  ///   __nav_fwd__        → Navigation vorwärts
-  ///   __nav_bak__        → Navigation zurück
+  ///   __item_N__         → Artikel-Slot N (0–14)
+  ///   __nav_fwd__        → Navigation vorwärts (Zeile 5, Spalte 5)
+  ///   __nav_bak__        → Navigation rückwärts (Zeile 7, Spalte 5)
   GridPage _buildCanonicalPage() {
     const modKeys = ['123', 'Einheit', 'Eigenschaft'];
     return GridPage(
@@ -160,46 +169,69 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
       backgroundColor: const Color(0xFF1E2E1E),
       wordList: const [],
       cells: [
-        // Modifier (Spalte 0, Zeilen 0-2)
+        // ── Header-Zeilen 0–1: Workspace + Home + DeleteWord ────────────
+        const GridCell(
+          x: 0, y: 0, rowSpan: 2,
+          symbolStem: '__home__',
+          style: GridCellStyle.actionNav,
+          type: GridCellType.normal,
+          commands: [GridCellCommand(type: GridCommandType.jumpHome)],
+        ),
+        const GridCell(
+          x: 1, y: 0, colSpan: 4, rowSpan: 2,
+          style: GridCellStyle.textfeld,
+          type: GridCellType.workspace,
+          commands: [],
+        ),
+        const GridCell(
+          x: 5, y: 0, rowSpan: 2,
+          symbolStem: '__deleteword__',
+          style: GridCellStyle.actionNav,
+          type: GridCellType.normal,
+          commands: [GridCellCommand(type: GridCommandType.deleteWord)],
+        ),
+        // ── Inhalt (verschoben um 2 Zeilen nach unten) ──────────────────
+        // Modifier (Spalte 0, Zeilen 2–4)
         for (int r = 0; r < 3; r++)
           GridCell(
-            x: 0, y: r,
+            x: 0, y: 2 + r,
             caption: modKeys[r],
             symbolStem: '__mod_${modKeys[r]}__',
             style: GridCellStyle.actionNav,
             type: GridCellType.normal,
             commands: const [],
           ),
-        // Kategorien (Spalten 1–5, Zeilen 0–2)
+        // Kategorien (Spalten 1–5, Zeilen 2–4)
         for (int i = 0; i < _kategorien.length; i++)
           GridCell(
-            x: 1 + i % 5, y: i ~/ 5,
+            x: 1 + i % 5, y: 2 + i ~/ 5,
             caption: _kategorien[i].label,
             symbolStem: '__kat_${i}__',
             style: GridCellStyle.actionNav,
             type: GridCellType.normal,
             commands: const [],
           ),
-        // Artikel-Slots (Spalten 0–4, Zeilen 3–4)
+        // Artikel-Slots (Spalten 0–4, Zeilen 5–7)
         for (int i = 0; i < _pageSize; i++)
           GridCell(
-            x: i % 5, y: 3 + i ~/ 5,
+            x: i % 5, y: 5 + i ~/ 5,
             symbolStem: '__item_${i}__',
             style: GridCellStyle.wortliste,
             type: GridCellType.autoContent,
             commands: const [],
           ),
-        // Navigation (Spalte 5, Zeilen 3–4)
+        // Navigation vorwärts (Spalte 5, Zeile 5)
         const GridCell(
-          x: 5, y: 3,
+          x: 5, y: 5,
           caption: 'Weitere\nVorhersagen',
           symbolStem: '__nav_fwd__',
           style: GridCellStyle.weitereWoerter,
           type: GridCellType.normal,
           commands: [],
         ),
+        // Navigation rückwärts (Spalte 5, Zeile 7 = unterste Reihe)
         const GridCell(
-          x: 5, y: 4,
+          x: 5, y: 7,
           caption: 'Weitere\nVorhersagen',
           symbolStem: '__nav_bak__',
           style: GridCellStyle.weitereWoerter,
@@ -253,6 +285,41 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
     }
   }
 
+  Future<void> _confirmClearAll() async {
+    Timer? timer;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        timer = Timer(const Duration(seconds: 3), () {
+          if (ctx.mounted) Navigator.pop(ctx, false);
+        });
+        return AlertDialog(
+          title: const Text('Alles löschen?'),
+          content: const Text(
+            'Soll der gesamte Text wirklich gelöscht werden?\n'
+            '(Dialog schließt sich automatisch nach 3 Sekunden.)',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Nein'),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Ja, löschen'),
+            ),
+          ],
+        );
+      },
+    );
+    timer?.cancel();
+    if ((confirmed ?? false) && mounted) {
+      context.read<NasiraAppState>().clearText();
+    }
+  }
+
   List<String> get _pageItems {
     final all   = _allItems;
     final start = _page * _pageSize;
@@ -299,70 +366,114 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
     return Scaffold(
       backgroundColor: NasiraColors.briefBg,
       body: SafeArea(
-        child: Column(
-          children: [
-            NasiraModuleHeader(
-              controller: state.textController,
-              accentColor: NasiraColors.navGreen,
-              onMenu: () => setState(() => _editorOpen = true),
-              onBack: () {
-                if (_activeKey != null) {
-                  setState(() { _activeKey = null; _page = 0; });
-                } else {
-                  Navigator.pop(context);
-                }
-              },
-            ),
-            Expanded(
-              child: FutureBuilder<NasiraLoadResult>(
-                future: state.futureLoad,
-                builder: (ctx, snap) {
-                  if (!snap.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  _cachedData = snap.data!.data;
-                  return _buildStackGrid(state);
-                },
-              ),
-            ),
-          ],
+        child: FutureBuilder<NasiraLoadResult>(
+          future: state.futureLoad,
+          builder: (ctx, snap) {
+            if (!snap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            _cachedData = snap.data!.data;
+            return _buildStackGrid(state);
+          },
         ),
       ),
     );
   }
 
-  // ── Stack-basiertes Grid (ersetzt GridView.builder; Overrides anwendbar) ─
+  // ── Zweigeteiltes Grid: Header (Zeilen 0-1) + Inhalt (Zeilen 2-7) ─────────
+  //
+  // Jeder Abschnitt bekommt seinen eigenen Expanded-Slot in einer Column,
+  // sodass die Inhaltszellen (Kategorien + Artikel) garantiert sichtbar bleiben
+  // unabhängig von Fensterhöhe oder Taskbar-Überlappung.
 
   Widget _buildStackGrid(NasiraAppState state) {
     final page = _effectivePage;
-    final cols = page.columns;
-    final rows = page.rows;
+    final cols  = page.columns;
+    const gap = 4.0;
+    const pad = 4.0;
+
+    final headerCells  = page.cells.where((c) => c.y < _headerRows).toList();
+    final contentCells = page.cells.where((c) => c.y >= _headerRows).toList();
+
     return Container(
       color: page.backgroundColor,
-      child: LayoutBuilder(builder: (ctx, box) {
-        const gap = 4.0;
-        const pad = 4.0;
-        final cellW = (box.maxWidth  - gap * (cols - 1) - pad * 2) / cols;
-        final cellH = (box.maxHeight - gap * (rows - 1) - pad * 2) / rows;
-        return Stack(
-          children: [
-            for (final cell in page.cells)
-              Positioned(
-                left:   pad + cell.x * (cellW + gap),
-                top:    pad + cell.y * (cellH + gap),
-                width:  cell.colSpan * (cellW + gap) - gap,
-                height: cell.rowSpan * (cellH + gap) - gap,
-                child: _renderCell(cell, state),
-              ),
-          ],
-        );
-      }),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // ── Header (Zeilen 0-1) ────────────────────────────────────────────
+          Expanded(
+            flex: _headerRows,
+            child: LayoutBuilder(builder: (ctx, box) {
+              final cellW = (box.maxWidth  - gap * (cols - 1)          - pad * 2) / cols;
+              final cellH = (box.maxHeight - gap * (_headerRows - 1)   - pad * 2) / _headerRows;
+              return Stack(
+                children: [
+                  for (final cell in headerCells)
+                    Positioned(
+                      left:   pad + cell.x * (cellW + gap),
+                      top:    pad + cell.y * (cellH + gap),
+                      width:  cell.colSpan * (cellW + gap) - gap,
+                      height: cell.rowSpan * (cellH + gap) - gap,
+                      child:  _renderCell(cell, state),
+                    ),
+                ],
+              );
+            }),
+          ),
+          // ── Inhalt (Zeilen 2-7: Modifier / Kat / Artikel / Nav) ───────────
+          Expanded(
+            flex: _contentRows,
+            child: LayoutBuilder(builder: (ctx, box) {
+              final cellW = (box.maxWidth  - gap * (cols - 1)           - pad * 2) / cols;
+              final cellH = (box.maxHeight - gap * (_contentRows - 1)   - pad * 2) / _contentRows;
+              return Stack(
+                children: [
+                  for (final cell in contentCells)
+                    Positioned(
+                      left:   pad + cell.x * (cellW + gap),
+                      top:    pad + (cell.y - _headerRows) * (cellH + gap),
+                      width:  cell.colSpan * (cellW + gap) - gap,
+                      height: cell.rowSpan * (cellH + gap) - gap,
+                      child:  _renderCell(cell, state),
+                    ),
+                ],
+              );
+            }),
+          ),
+        ],
+      ),
     );
   }
 
   // ── Zellen-Router: symbolStem → passendes Widget ──────────────────────────
 
   Widget _renderCell(GridCell cell, NasiraAppState state) {
+    // ── Header-Zellen ────────────────────────────────────────────────────────
+    if (cell.type == GridCellType.workspace) {
+      return NasiraTextWorkspace(
+        controller: state.textController,
+        minHeight: 0,
+        maxHeight: double.infinity,
+      );
+    }
+
+    if (cell.isHome) {
+      return NasiraGridCell(
+        icon: Icons.home_outlined,
+        backgroundColor: NasiraColors.navGreen,
+        onTap: () => Navigator.of(context).popUntil((r) => r.isFirst),
+      );
+    }
+
+    if (cell.isDeleteWord) {
+      return NasiraGridCell(
+        icon: Icons.backspace_outlined,
+        backgroundColor: NasiraColors.navGreen,
+        onTap: state.deleteLastWord,
+        onLongPress: _confirmClearAll,
+      );
+    }
+
     final stem = cell.symbolStem ?? '';
 
     if (stem.startsWith('__mod_')) {
