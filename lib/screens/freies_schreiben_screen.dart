@@ -3,19 +3,23 @@ import 'package:provider/provider.dart';
 import '../models/models.dart';
 import '../nasira_app_state.dart';
 import '../nasira_repository.dart';
+import '../services/grid_import_service.dart';
 import '../theme/nasira_colors.dart';
 import '../widgets/composite_symbol.dart';
-import '../widgets/nasira_grid_cell.dart';
-import '../widgets/nasira_keyboard.dart';
-import '../widgets/nasira_module_header.dart';
+import '../widgets/nasira_text_workspace.dart';
 
-// ── Freies Schreiben ────────────────────────────────────────────────────────
+// ── Freies Schreiben — Grid3-XML-getrieben ────────────────────────────────────
 //
-// Layout:
-//   NasiraModuleHeader
-//   Row: [3-Reihen-Kategorie-Grid (horizontal scrollbar)] | [Toggle + Vorlesen]
-//   — Tastatur-Modus: Vorhersage-Streifen + NasiraKeyboard
-//   — Symbol-Modus:   (Satz-Vorschau) + Suchfeld + Symbol-Grid
+// Lädt alle Tastatur-Grids (Haupt + Buchstaben-Sub-Grids) on demand aus dem
+// Grid3-Export und rendert sie 1:1.  Navigation via Jump.To / Jump.Back /
+// Jump.Home.  Vorhersage-Slots (AutoContent) werden mit dem 7-stufigen
+// Suggestion-Engine befüllt.
+//
+// Haupt-Grid:  "1 Freies Schreiben Tastatur"  (25 × 8)
+//   Zeilen 0-1:  Workspace / Home / Back / DeleteWord
+//   Zeilen 2-3:  14 Vorhersage-Slots (7 × ColSpan3 je Zeile) + Mehr-Button
+//   Zeilen 4-6:  QWERTZ-Tastatur
+//   Zeile  7:    Navigationsleiste (ABC, 123, Space, …)
 
 class FreiesSchreibenScreen extends StatefulWidget {
   const FreiesSchreibenScreen({super.key});
@@ -25,266 +29,268 @@ class FreiesSchreibenScreen extends StatefulWidget {
 }
 
 class _FreiesSchreibenScreenState extends State<FreiesSchreibenScreen> {
-  final TextEditingController _suchController = TextEditingController();
-  final FocusNode _textFocusNode = FocusNode();
+  static const _mainGrid   = '1 Freies Schreiben Tastatur';
+  static const _headerRows = 2; // Rows 0-1 in allen FS-Grids
 
-  String _selectedCategory = 'Alle';
-  bool _symbolModus = false;
+  final _importer = GridImportService();
+  final Map<String, GridPage> _grids   = {};
+  final List<String>          _history = [];
+  final FocusNode             _focus   = FocusNode();
 
-  // Bessere Suchwörter für Kategorie-Namen die keinen Direkt-Treffer haben
-  static const _catHint = <String, String>{
-    'arzt_gesundheit':                 'Gesundheit',
-    'behaelter_taschen':               'Tasche',
-    'buch_zeitung':                    'Buch',
-    'buchstaben_schreiben':            'schreiben',
-    'buero_basteln':                   'basteln',
-    'didaktikmaterial':                'Schule',
-    'eigenschaften_emotionen':         'glücklich',
-    'fantasie':                        'vorstellen',
-    'farben_formen':                   'Farben',
-    'flaggen':                         'Fahne',
-    'fragewoerter':                    'Fragen',
-    'fragewörter':                     'Fragen',
-    'geografie':                       'Landschaft',
-    'hausarbeit':                      'putzen',
-    'kleidung_accessoires':            'Kleidung',
-    'kleine_worte':                    'und',
-    'kleinewörter':                    'und',
-    'koerperpflege':                   'waschen',
-    'konversation_interaktion':        'sprechen',
-    'lebensmittel_essen':              'Essen',
-    'lebensmittel_trinken':            'trinken',
-    'liebe_sexualitaet':               'Liebe',
-    'lieder_bis_weihnachten':          'singen',
-    'lieder_haende_auf_reisen':        'singen',
-    'lieder_haeuptling_sprechende_hand': 'singen',
-    'lieder_mit_den_haenden':          'singen',
-    'musik':                           'Musik',
-    'pfeile_funktionen':               'Pfeil',
-    'pronomenartikel':                 'der',
-    'raumschilder':                    'Tür',
-    'raumschilder_tuer':               'Tür',
-    'schule_foerdereinrichtung':       'Schule',
-    'sonstiges':                       'verschiedenes',
-    'stadt_verkehr':                   'Auto',
-    'tv_audio_foto':                   'Fernseher',
-    'urlaub_spass':                    'Urlaub',
-    'verben':                          'spielen',
-    'werkzeug_werkstatt':              'Werkzeug',
-    'wetter_himmel':                   'Wetter',
-    'zahlen_rechnen':                  'Zahlen',
-    'zeit_alternativsymbole':          'Zeit',
-  };
+  String _current  = _mainGrid;
+  bool   _capsLock = false;
+  bool   _shift    = false;
+  int    _predPage = 0; // Vorhersage-Seite (0 = Slots 0-13)
+
+  GridPage? get _page => _grids[_current];
+
+  // ── Lifecycle ──────────────────────────────────────────────────────────────
 
   @override
   void initState() {
     super.initState();
-    _suchController.addListener(() => setState(() {}));
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _textFocusNode.requestFocus();
-    });
+    _loadGrid(_mainGrid);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
 
   @override
   void dispose() {
-    _suchController.dispose();
-    _textFocusNode.dispose();
+    _focus.dispose();
     super.dispose();
   }
 
-  // ── Toggle: Tastatur ↔ Symbole ────────────────────────────────────────────
-  //
-  // Beim Aufklappen wird die Kategorie automatisch auf das zuletzt eingetippte
-  // Wort gesetzt. Ist das Feld leer, bleibt "Alle" aktiv.
+  // ── Grid-Laden ─────────────────────────────────────────────────────────────
 
-  void _toggleModus(NasiraAppState state, NasiraData data) {
-    if (!_symbolModus) {
-      final text = state.textController.text.trim();
-      if (text.isEmpty) {
-        _selectedCategory = 'Alle';
-      } else {
-        final lastWord = text.split(RegExp(r'\s+')).last;
-        final sym = state.cachedLookup(data, lastWord);
-        if (sym != null) {
-          final cat = sym.symbol.category;
-          _selectedCategory = data.mappedCategories.contains(cat)
-              ? cat
-              : (data.mappedCategories.isNotEmpty
-                  ? data.mappedCategories.first
-                  : 'Alle');
-        } else {
-          _selectedCategory = data.mappedCategories.isNotEmpty
-              ? data.mappedCategories.first
-              : 'Alle';
-        }
-      }
-    }
-    setState(() => _symbolModus = !_symbolModus);
+  Future<void> _loadGrid(String name) async {
+    if (_grids.containsKey(name)) return;
+    final page = await _importer.importPage(name);
+    if (page != null && mounted) setState(() => _grids[name] = page);
   }
 
-  // ── Build ─────────────────────────────────────────────────────────────────
+  // ── Navigation ─────────────────────────────────────────────────────────────
+
+  void _navigate(String target) {
+    setState(() {
+      _history.add(_current);
+      _current  = target;
+      _predPage = 0;
+    });
+    _loadGrid(target);
+  }
+
+  void _goBack() {
+    if (_history.isEmpty) { Navigator.pop(context); return; }
+    setState(() {
+      _current  = _history.removeLast();
+      _predPage = 0;
+    });
+  }
+
+  // ── Befehle ausführen ──────────────────────────────────────────────────────
+
+  void _run(List<GridCellCommand> cmds, NasiraAppState state, NasiraData? data) {
+    for (final cmd in cmds) {
+      switch (cmd.type) {
+        case GridCommandType.insertText:
+          final raw = cmd.insertText ?? '';
+          if (raw.isEmpty) break;
+          // CapsLock XOR Shift → Großbuchstaben bei einzelnem Zeichen
+          final upper = raw.length == 1 && (_capsLock != _shift);
+          state.appendLetter(upper ? raw.toUpperCase() : raw.toLowerCase());
+          if (_shift && !_capsLock) setState(() => _shift = false);
+
+        case GridCommandType.punctuation:
+          if (cmd.punctuation != null) state.appendLetter(cmd.punctuation!);
+
+        case GridCommandType.deleteWord:
+          state.deleteLastWord();
+
+        case GridCommandType.deleteLetter:
+          state.deleteLastLetter();
+
+        case GridCommandType.enter:
+          state.appendLetter('\n');
+
+        case GridCommandType.jumpTo:
+          if (cmd.jumpTarget != null) _navigate(cmd.jumpTarget!);
+
+        case GridCommandType.jumpBack:
+          _goBack();
+
+        case GridCommandType.jumpHome:
+          Navigator.pop(context);
+
+        case GridCommandType.capsLock:
+          setState(() => _capsLock = !_capsLock);
+
+        case GridCommandType.shift:
+          setState(() => _shift = !_shift);
+
+        case GridCommandType.moreWords:
+          setState(() => _predPage++);
+
+        case GridCommandType.documentEnd:
+        // Cursor ans Ende — TextEditingController ist immer am Ende
+        case GridCommandType.speak:
+        // TTS: nicht implementiert
+        default:
+          break;
+      }
+    }
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
     final state = context.watch<NasiraAppState>();
-    return FutureBuilder<NasiraLoadResult>(
-      future: state.futureLoad,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
-          return const Scaffold(
-            backgroundColor: NasiraColors.keyboardBg,
-            body: Center(
-                child: CircularProgressIndicator(color: Colors.white)),
-          );
-        }
-        if (snapshot.hasError) {
-          return Scaffold(
-            backgroundColor: NasiraColors.keyboardBg,
-            body: Center(
-                child: Text('Fehler: ${snapshot.error}',
-                    style: const TextStyle(color: Colors.white))),
-          );
-        }
+    final page  = _page;
 
-        final data = snapshot.data!.data;
-        final text = state.textController.text.trim();
-        final suggestions = state.suggestions.isEmpty
-            ? data.initialSuggestions(limit: 14)
-            : state.suggestions;
-
-        // "Alle" nur einblenden wenn Schreibfeld leer ist
-        final cats = [
-          if (text.isEmpty) 'Alle',
-          ...data.mappedCategories,
-        ];
-
-        return Scaffold(
-          backgroundColor: NasiraColors.keyboardBg,
-          body: SafeArea(
-            child: Column(
-              children: [
-                // ── Kopfzeile ────────────────────────────────────────────
-                NasiraModuleHeader(
-                  controller: state.textController,
-                  accentColor: NasiraColors.navGreen,
-                  onBack: () => Navigator.pop(context),
-                  focusNode: _textFocusNode,
-                  readOnly: false,
-                  autofocus: true,
-                ),
-
-                // ── Toggle-Streifen (immer) ──────────────────────────────
-                _buildToggleStrip(state, data),
-
-                // ── Kategorie-Grid (nur Symbol-Modus) ────────────────────
-                if (_symbolModus) _buildCategoryGrid(state, data, cats),
-
-                // ── Vorhersage-Streifen (nur Tastatur-Modus) ─────────────
-                if (!_symbolModus)
-                  _buildPredictionStrip(state, data, suggestions),
-
-                // ── Satz-Vorschau (Symbol-Modus, Text vorhanden) ──────────
-                if (_symbolModus && text.isNotEmpty)
-                  _buildSatzVorschau(state, data, text),
-
-                // ── Suchfeld (Symbol-Modus) ───────────────────────────────
-                if (_symbolModus) _buildSearchField(),
-
-                // ── Symbol-Grid oder Tastatur ────────────────────────────
-                if (_symbolModus)
-                  Expanded(child: _buildSymbolGrid(state, data))
-                else
-                  NasiraKeyboard(
-                    controller: state.textController,
-                    textFocusNode: _textFocusNode,
-                  ),
-              ],
-            ),
-          ),
-        );
-      },
+    return Scaffold(
+      backgroundColor: NasiraColors.keyboardBg,
+      body: SafeArea(
+        child: page == null
+            ? const Center(child: CircularProgressIndicator(color: Colors.white54))
+            : FutureBuilder<NasiraLoadResult>(
+                future: state.futureLoad,
+                builder: (ctx, snap) =>
+                    _buildGrid(page, state, snap.data?.data),
+              ),
+      ),
     );
   }
 
-  // ── Toggle-Streifen (immer sichtbar, schmal) ─────────────────────────────
+  // ── Zweigeteiltes Grid: Header (Zeilen 0-1) + Inhalt (Zeilen 2-N) ──────────
 
-  Widget _buildToggleStrip(NasiraAppState state, NasiraData data) {
-    return SizedBox(
-      height: 52,
-      child: Row(
+  Widget _buildGrid(GridPage page, NasiraAppState state, NasiraData? data) {
+    final cols        = page.columns;
+    final contentRows = page.rows - _headerRows;
+    const gap = 3.0;
+    const pad = 3.0;
+
+    final headerCells  = page.cells.where((c) => c.y < _headerRows).toList();
+    final contentCells = page.cells.where((c) => c.y >= _headerRows).toList();
+
+    // AutoContent-Zellen sortiert für Vorhersage-Slot-Zuweisung
+    final predCells = (page.cells
+        .where((c) => c.type == GridCellType.autoContent)
+        .toList()
+      ..sort((a, b) => a.y != b.y ? a.y.compareTo(b.y) : a.x.compareTo(b.x)));
+
+    final suggestions = _suggestions(state, data);
+
+    return Container(
+      color: NasiraColors.keyboardBg,
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(child: _buildToggleButton(state, data)),
-          const SizedBox(width: 2),
-          SizedBox(width: 76, child: _buildVorlesenButton(state)),
+          // ── Header (Zeilen 0-1) ───────────────────────────────────────────
+          Expanded(
+            flex: _headerRows,
+            child: LayoutBuilder(builder: (ctx, box) {
+              final cW = (box.maxWidth  - gap * (cols - 1) - pad * 2) / cols;
+              final cH = (box.maxHeight - gap * (_headerRows - 1) - pad * 2) / _headerRows;
+              return Stack(children: [
+                for (final cell in headerCells)
+                  _positioned(cell, 0, cW, cH, gap, pad,
+                      _cell(cell, state, data, suggestions, predCells)),
+              ]);
+            }),
+          ),
+          // ── Inhalt (Zeilen 2-N: Vorhersage + Tastatur + Nav) ─────────────
+          Expanded(
+            flex: contentRows,
+            child: LayoutBuilder(builder: (ctx, box) {
+              final cW = (box.maxWidth  - gap * (cols - 1) - pad * 2) / cols;
+              final cH = (box.maxHeight - gap * (contentRows - 1) - pad * 2) / contentRows;
+              return Stack(children: [
+                for (final cell in contentCells)
+                  _positioned(cell, _headerRows, cW, cH, gap, pad,
+                      _cell(cell, state, data, suggestions, predCells)),
+              ]);
+            }),
+          ),
         ],
       ),
     );
   }
 
-  // ── Kategorie-Grid (nur Symbol-Modus, 3 Spalten, vertikal scrollbar) ──────
-
-  Widget _buildCategoryGrid(
-      NasiraAppState state, NasiraData data, List<String> cats) {
-    return SizedBox(
-      height: 200,
-      child: GridView.builder(
-        padding: const EdgeInsets.all(4),
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 82,
-          crossAxisSpacing: 4,
-          mainAxisSpacing: 4,
-          childAspectRatio: 1.15,
-        ),
-        itemCount: cats.length,
-        itemBuilder: (ctx, i) => _buildCatChip(state, data, cats[i]),
-      ),
+  Positioned _positioned(GridCell cell, int yBase, double cW, double cH,
+      double gap, double pad, Widget child) {
+    return Positioned(
+      left:   pad + cell.x * (cW + gap),
+      top:    pad + (cell.y - yBase) * (cH + gap),
+      width:  cell.colSpan * (cW + gap) - gap,
+      height: cell.rowSpan * (cH + gap) - gap,
+      child:  child,
     );
   }
 
-  // ── Kategorie-Chip ────────────────────────────────────────────────────────
+  // ── Zellen-Dispatcher ─────────────────────────────────────────────────────
 
-  Widget _buildCatChip(
-      NasiraAppState state, NasiraData data, String cat) {
-    final isSelected = _selectedCategory == cat;
-    final lookupWord = _catHint[cat.toLowerCase()] ?? cat;
-    final sym = state.cachedLookup(data, lookupWord);
-    final path =
-        sym != null ? state.assetResolver.resolveForSymbol(sym) : null;
+  Widget _cell(GridCell cell, NasiraAppState state, NasiraData? data,
+      List<WordEntry> suggestions, List<GridCell> predCells) {
 
+    // Workspace
+    if (cell.type == GridCellType.workspace) {
+      return NasiraTextWorkspace(
+        controller:  state.textController,
+        borderColor: NasiraColors.fsBorder,
+        minHeight:   0,
+        maxHeight:   double.infinity,
+        readOnly:    false,
+        focusNode:   _focus,
+      );
+    }
+
+    // AutoContent → Vorhersage-Slot
+    if (cell.type == GridCellType.autoContent) {
+      final idx = predCells.indexOf(cell);
+      if (idx >= 0 && idx < suggestions.length) {
+        return _predCell(suggestions[idx], state, data);
+      }
+      return _empty();
+    }
+
+    // Normale Kachel
+    return _normalCell(cell, state, data);
+  }
+
+  // ── Vorhersage-Kachel ─────────────────────────────────────────────────────
+
+  Widget _predCell(WordEntry word, NasiraAppState state, NasiraData? data) {
+    final sym  = data != null ? state.cachedLookup(data, word.text) : null;
+    final path = sym != null ? state.assetResolver.resolveForSymbol(sym) : null;
     return Material(
-      color: isSelected
-          ? NasiraColors.navGreen
-          : NasiraColors.moduleDarkGreen,
-      borderRadius: BorderRadius.circular(6),
+      color: NasiraColors.fsPrediction,
+      borderRadius: BorderRadius.circular(5),
       child: InkWell(
-        borderRadius: BorderRadius.circular(6),
-        onTap: () => setState(() => _selectedCategory = cat),
+        borderRadius: BorderRadius.circular(5),
+        onTap: data == null ? null : () => state.insertWord(data, word),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(3, 3, 3, 2),
+          padding: const EdgeInsets.fromLTRB(2, 3, 2, 2),
           child: Column(
             children: [
               Expanded(
-                child: path != null
-                    ? Image.asset(path,
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const Icon(
-                            Icons.category_outlined,
-                            color: Colors.white54,
-                            size: 18))
-                    : const Icon(Icons.category_outlined,
-                        color: Colors.white54, size: 18),
+                child: Center(
+                  child: CompositeSymbolWidget(
+                    assetPath1: path,
+                    isPlural:   state.isPlural(word.text),
+                    fallbackText: word.text,
+                    size: 40,
+                  ),
+                ),
               ),
               Text(
-                cat,
+                word.text,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 8,
-                  color: isSelected ? Colors.white : Colors.white70,
+                style: const TextStyle(
+                  fontSize: 9,
                   fontWeight: FontWeight.w700,
-                  height: 1.1,
+                  color: NasiraColors.fsPredictionText,
+                  height: 1.0,
                 ),
               ),
             ],
@@ -294,275 +300,109 @@ class _FreiesSchreibenScreenState extends State<FreiesSchreibenScreen> {
     );
   }
 
-  // ── Toggle-Button (Symbole auf-/zuklappen) ────────────────────────────────
+  // ── Normale Kachel ────────────────────────────────────────────────────────
 
-  Widget _buildToggleButton(NasiraAppState state, NasiraData data) {
+  Widget _normalCell(GridCell cell, NasiraAppState state, NasiraData? data) {
+    Color bg = cell.backgroundColor;
+    Color fg = cell.foregroundColor;
+
+    // CapsLock / Shift visuell aktiv
+    if (cell.isCapsLock && _capsLock) bg = NasiraColors.navGreen;
+    if (cell.isShiftKey && _shift)    bg = NasiraColors.navGreen;
+
+    // Icon
+    IconData? icon;
+    if (cell.isHome)         icon = Icons.home_outlined;
+    if (cell.isBack)         icon = Icons.arrow_back_rounded;
+    if (cell.isDeleteWord)   icon = Icons.backspace_outlined;
+    if (cell.isDeleteLetter) icon = Icons.backspace_outlined;
+    if (cell.isCapsLock)     icon = Icons.keyboard_capslock_rounded;
+    if (cell.isShiftKey)     icon = Icons.arrow_upward_rounded;
+
+    // Caption mit CapsLock/Shift-Anzeige für Buchstaben (1-2 Zeichen)
+    String? caption = cell.caption;
+    final isLetter = cell.isInsertCell &&
+        !cell.isNavigation &&
+        !cell.isPunctuation &&
+        caption != null &&
+        caption.length <= 2;
+    if (isLetter) {
+      final upper = _capsLock != _shift;
+      caption = upper ? caption.toUpperCase() : caption.toLowerCase();
+    }
+
     return Material(
-      color: NasiraColors.navGreen,
+      color: bg,
+      borderRadius: BorderRadius.circular(5),
       child: InkWell(
-        onTap: () => _toggleModus(state, data),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Stack(
-              alignment: Alignment.center,
-              children: [
-                Icon(
-                  Icons.data_usage_rounded,
-                  size: 28,
-                  color: Colors.white.withAlpha(200),
-                ),
-                Icon(
-                  _symbolModus ? Icons.remove : Icons.add,
-                  size: 14,
-                  color: Colors.white,
-                ),
-              ],
-            ),
-            const SizedBox(height: 2),
-            Text(
-              _symbolModus ? 'Einklappen' : 'Ausklappen',
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 9,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Vorlesen-Button ───────────────────────────────────────────────────────
-
-  Widget _buildVorlesenButton(NasiraAppState state) {
-    return Material(
-      color: NasiraColors.navGreen,
-      child: InkWell(
-        onTap: () {
-          // TODO: TTS-Integration
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Vorlesen nicht verfügbar'),
-            duration: Duration(seconds: 2),
-          ));
-        },
-        child: const Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.volume_up_rounded, color: Colors.white, size: 28),
-            SizedBox(height: 4),
-            Text(
-              'Vorlesen',
-              style: TextStyle(
-                color: Colors.white,
-                fontSize: 9,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ── Vorhersage-Streifen ───────────────────────────────────────────────────
-
-  Widget _buildPredictionStrip(
-      NasiraAppState state, NasiraData data, List<WordEntry> suggestions) {
-    return Container(
-      height: 88,
-      color: NasiraColors.keyboardBg,
-      padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        separatorBuilder: (_, __) => const SizedBox(width: 4),
-        itemCount: suggestions.length.clamp(0, 14),
-        itemBuilder: (context, i) {
-          if (i >= suggestions.length) return const SizedBox.shrink();
-          return _buildPredictionCell(state, data, suggestions[i]);
-        },
-      ),
-    );
-  }
-
-  Widget _buildPredictionCell(
-      NasiraAppState state, NasiraData data, WordEntry word) {
-    final mapped = state.cachedLookup(data, word.text);
-    final assetPath =
-        mapped != null ? state.assetResolver.resolveForSymbol(mapped) : null;
-    final plural = state.isPlural(word.text);
-
-    return SizedBox(
-      width: 76,
-      child: Material(
-        color: NasiraColors.fsPrediction,
-        borderRadius: BorderRadius.circular(8),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(8),
-          onTap: () => state.insertWord(data, word),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(3, 4, 3, 3),
-            child: Column(
-              children: [
+        borderRadius: BorderRadius.circular(5),
+        onTap: cell.commands.isEmpty ? null : () => _run(cell.commands, state, data),
+        child: Padding(
+          padding: const EdgeInsets.all(3),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (icon != null) ...[
+                Expanded(child: Center(child: Icon(icon, color: fg, size: 22))),
+                if (caption != null && caption.isNotEmpty)
+                  Text(caption,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          fontSize: 8,
+                          color: fg,
+                          fontWeight: FontWeight.w600)),
+              ] else if (caption != null && caption.isNotEmpty)
                 Expanded(
                   child: Center(
-                    child: CompositeSymbolWidget(
-                      assetPath1: assetPath,
-                      isPlural: plural,
-                      fallbackText: word.text,
-                      size: 48,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        caption,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: isLetter ? 20 : 11,
+                          fontWeight: FontWeight.w600,
+                          color: fg,
+                          height: 1.1,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  word.text,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: NasiraColors.fsPredictionText,
-                    height: 1.0,
-                  ),
-                ),
-              ],
-            ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  // ── Satz-Vorschau ─────────────────────────────────────────────────────────
+  // ── Vorhersagen (paginiert) ────────────────────────────────────────────────
 
-  Widget _buildSatzVorschau(
-      NasiraAppState state, NasiraData data, String text) {
-    final tokens = text
-        .trim()
-        .split(RegExp(r'\s+'))
-        .where((t) => t.trim().isNotEmpty && t.length >= 2)
-        .toList();
-    if (tokens.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      height: 76,
-      color: NasiraColors.startseite,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        separatorBuilder: (_, __) => const SizedBox(width: 4),
-        itemCount: tokens.length,
-        itemBuilder: (context, i) {
-          final token = tokens[i];
-          final sym = state.cachedLookup(data, token);
-          final path =
-              sym != null ? state.assetResolver.resolveForSymbol(sym) : null;
-          final plural = state.isPlural(token);
-          return SizedBox(
-            width: 58,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  height: 46,
-                  child: CompositeSymbolWidget(
-                    assetPath1: path,
-                    isPlural: plural,
-                    fallbackText: token,
-                    size: 40,
-                  ),
-                ),
-                Text(
-                  token,
-                  overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(
-                    fontSize: 9,
-                    color: Colors.white70,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          );
-        },
-      ),
-    );
+  List<WordEntry> _suggestions(NasiraAppState state, NasiraData? data) {
+    final all = state.suggestions.isNotEmpty
+        ? state.suggestions
+        : (data?.initialSuggestions(limit: 56) ?? []);
+    final start = _predPage * 14;
+    if (start >= all.length) {
+      // Letzte Seite erreicht → zurück zu Seite 0
+      if (_predPage > 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) setState(() => _predPage = 0);
+        });
+      }
+      return all.sublist(0, all.length.clamp(0, 14));
+    }
+    return all.sublist(start, (start + 14).clamp(0, all.length));
   }
 
-  // ── Suchfeld ──────────────────────────────────────────────────────────────
+  // ── Leer-Kachel ──────────────────────────────────────────────────────────
 
-  Widget _buildSearchField() {
-    return Container(
-      color: NasiraColors.startseite,
-      padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
-      child: TextField(
-        controller: _suchController,
-        style: const TextStyle(color: Colors.white),
-        decoration: InputDecoration(
-          isDense: true,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          filled: true,
-          fillColor: NasiraColors.navGreen,
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(24),
-            borderSide: BorderSide.none,
-          ),
-          hintText: 'Symbol suchen …',
-          hintStyle: TextStyle(color: Colors.white.withAlpha(150)),
-          prefixIcon:
-              const Icon(Icons.search, color: Colors.white70, size: 20),
-          suffixIcon: _suchController.text.isEmpty
-              ? null
-              : IconButton(
-                  icon: const Icon(Icons.close,
-                      color: Colors.white70, size: 18),
-                  onPressed: () => _suchController.clear(),
-                ),
-        ),
-      ),
-    );
-  }
-
-  // ── Symbol-Grid ───────────────────────────────────────────────────────────
-
-  Widget _buildSymbolGrid(NasiraAppState state, NasiraData data) {
-    final mapped = data.filteredMappedSymbols(
-      category: _selectedCategory,
-      search: _suchController.text,
-    );
-    return Container(
-      color: NasiraColors.gridDark,
-      child: GridView.builder(
-        padding: const EdgeInsets.all(6),
-        itemCount: mapped.length,
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 120,
-          crossAxisSpacing: 6,
-          mainAxisSpacing: 6,
-          childAspectRatio: 0.85,
-        ),
-        itemBuilder: (context, i) =>
-            _buildSymbolKachel(state, data, mapped[i]),
-      ),
-    );
-  }
-
-  Widget _buildSymbolKachel(
-      NasiraAppState state, NasiraData data, MappedSymbol item) {
-    final assetPath = state.assetResolver.resolveForSymbol(item);
-    return NasiraGridCell(
-      caption: item.word.text,
-      assetPath: assetPath,
-      backgroundColor: NasiraColors.cellWhite,
-      textColor: NasiraColors.textDark,
-      fontSize: 10,
-      borderRadius: 10,
-      onTap: () => state.insertWord(data, item.word),
-    );
-  }
+  Widget _empty() => Container(
+    decoration: BoxDecoration(
+      color: const Color(0xFF1B2B38),
+      borderRadius: BorderRadius.circular(5),
+    ),
+  );
 }

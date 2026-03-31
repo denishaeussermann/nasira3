@@ -158,6 +158,28 @@ class NasiraAppState extends ChangeNotifier {
     );
   }
 
+  /// Hängt ein einzelnes Zeichen / eine kurze Zeichenfolge direkt ans Ende an
+  /// (für Freies Schreiben Tastatur: kein Leerzeichen-Padding, kein Trimmen).
+  void appendLetter(String chars) {
+    final current = textController.text;
+    final updated = current + chars;
+    textController.value = TextEditingValue(
+      text: updated,
+      selection: TextSelection.collapsed(offset: updated.length),
+    );
+  }
+
+  /// Löscht das letzte Zeichen (Backspace).
+  void deleteLastLetter() {
+    final text = textController.text;
+    if (text.isEmpty) return;
+    final updated = text.characters.skipLast(1).string;
+    textController.value = TextEditingValue(
+      text: updated,
+      selection: TextSelection.collapsed(offset: updated.length),
+    );
+  }
+
   void clearText() {
     textController.clear();
     clearSymbolCache();

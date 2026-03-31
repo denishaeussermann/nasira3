@@ -82,10 +82,14 @@ enum GridCommandType {
   jumpHome,
   punctuation,
   deleteWord,
+  deleteLetter,  // Action.DeleteLetter — einzelnes Zeichen löschen (Backspace)
   documentEnd,
   enter,
   moreWords,
   setBookmark,
+  capsLock,      // ComputerControl.CapsLock
+  shift,         // ComputerControl.Shift
+  speak,         // Action.Speak
   other,
 }
 
@@ -175,6 +179,9 @@ class GridCell {
   bool get isBack          => commands.any((c) => c.type == GridCommandType.jumpBack);
   bool get isHome          => commands.any((c) => c.type == GridCommandType.jumpHome);
   bool get isDeleteWord    => commands.any((c) => c.type == GridCommandType.deleteWord);
+  bool get isDeleteLetter  => commands.any((c) => c.type == GridCommandType.deleteLetter);
+  bool get isCapsLock      => commands.any((c) => c.type == GridCommandType.capsLock);
+  bool get isShiftKey      => commands.any((c) => c.type == GridCommandType.shift);
   bool get isMoreWords     => commands.any((c) => c.type == GridCommandType.moreWords);
 
   @override

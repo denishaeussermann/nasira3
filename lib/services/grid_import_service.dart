@@ -267,13 +267,31 @@ class GridImportService {
           type: GridCommandType.punctuation,
           punctuation: _param(cmdEl, 'letter'),
         ),
+      'Action.Letter' => GridCellCommand(
+          type: GridCommandType.insertText,
+          insertText: _param(cmdEl, 'letter') ?? '',
+        ),
+      'Action.Space' => const GridCellCommand(
+          type: GridCommandType.insertText,
+          insertText: ' ',
+        ),
       'Action.DeleteWord' =>
         const GridCellCommand(type: GridCommandType.deleteWord),
+      'Action.DeleteLetter' =>
+        const GridCellCommand(type: GridCommandType.deleteLetter),
       'Action.DocumentEnd' =>
         const GridCellCommand(type: GridCommandType.documentEnd),
       'Action.Enter' => const GridCellCommand(type: GridCommandType.enter),
+      'Action.Speak' => const GridCellCommand(type: GridCommandType.speak),
+      'Action.Clear' => const GridCellCommand(type: GridCommandType.deleteWord),
       'Prediction.MoreWords' =>
         const GridCellCommand(type: GridCommandType.moreWords),
+      'Prediction.MorePredictions' =>
+        const GridCellCommand(type: GridCommandType.moreWords),
+      'ComputerControl.CapsLock' =>
+        const GridCellCommand(type: GridCommandType.capsLock),
+      'ComputerControl.Shift' =>
+        const GridCellCommand(type: GridCommandType.shift),
       'Jump.SetBookmark' =>
         const GridCellCommand(type: GridCommandType.setBookmark),
       _ => null,
