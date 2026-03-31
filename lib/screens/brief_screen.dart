@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../nasira_app_state.dart';
@@ -6,9 +8,8 @@ import '../services/grid_import_service.dart';
 import '../services/grid_override_service.dart';
 import '../theme/nasira_colors.dart';
 import '../widgets/grid_layout_editor.dart';
-import '../widgets/grid_page_editor_sheet.dart';
 import '../widgets/nasira_grid_cell.dart';
-import '../widgets/nasira_module_header.dart';
+import '../widgets/nasira_text_workspace.dart';
 import 'freies_schreiben_screen.dart';
 
 // ── Hilfsfunktion: Hauptwort für Symbol-Lookup ────────────────────────────────
@@ -180,17 +181,6 @@ class _BriefScreenState extends State<BriefScreen> {
     _BriefSchritt.endeGruesse:       'Mit welchem Gruß möchtest du schließen?',
   };
 
-  // ── Haupt-Sequenz für Vorwärts-Navigation ──────────────────────────────────
-
-  static const _mainSeq = [
-    _BriefSchritt.begruessung,
-    _BriefSchritt.personen,
-    _BriefSchritt.einleitung,
-    _BriefSchritt.inhaltsuebersicht,
-    _BriefSchritt.ende,
-    _BriefSchritt.endeGruesse,
-  ];
-
   // ── Initialisierung ────────────────────────────────────────────────────────
 
   @override
@@ -276,27 +266,46 @@ class _BriefScreenState extends State<BriefScreen> {
     });
   }
 
-  /// True wenn der aktuelle Schritt NICHT in der Haupt-Sequenz liegt
-  /// (d. h. wir befinden uns in einem Sub- oder Hub-Screen).
-  bool get _isSubScreen => !_mainSeq.contains(_schritt);
-
-  void _vorwaerts() {
-    if (_isSubScreen) {
-      // Aus jedem Sub-Screen direkt zurück zur Inhaltsübersicht springen.
-      _navigateTo(_BriefSchritt.inhaltsuebersicht);
-      return;
-    }
-    final idx = _mainSeq.indexOf(_schritt);
-    if (idx >= 0 && idx < _mainSeq.length - 1) {
-      _navigateTo(_mainSeq[idx + 1]);
-    }
-  }
-
   void _zurueck() {
     if (_history.isNotEmpty) {
       setState(() => _schritt = _history.removeLast());
     } else {
       Navigator.pop(context);
+    }
+  }
+
+  Future<void> _confirmClearAll() async {
+    Timer? timer;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        timer = Timer(const Duration(seconds: 3), () {
+          if (ctx.mounted) Navigator.pop(ctx, false);
+        });
+        return AlertDialog(
+          title: const Text('Alles löschen?'),
+          content: const Text(
+            'Soll der gesamte Text wirklich gelöscht werden?\n'
+            '(Dialog schließt sich automatisch nach 3 Sekunden.)',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Nein'),
+            ),
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Colors.red),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Ja, löschen'),
+            ),
+          ],
+        );
+      },
+    );
+    timer?.cancel();
+    if ((confirmed ?? false) && mounted) {
+      context.read<NasiraAppState>().clearText();
     }
   }
 
@@ -365,19 +374,7 @@ class _BriefScreenState extends State<BriefScreen> {
                 }),
               )
             // ── Normal-Modus ─────────────────────────────────────────────
-            : Column(
-                children: [
-                  NasiraModuleHeader(
-                    controller: state.textController,
-                    accentColor: NasiraColors.navGreen,
-                    onBack: _zurueck,
-                    onForward: _vorwaerts,
-                    onMenu: _currentOnEdit(),
-                    isForwardOval: _isSubScreen,
-                  ),
-                  Expanded(child: _buildStepContent(state)),
-                ],
-              ),
+            : _buildStepContent(state),
       ),
     );
   }
@@ -421,65 +418,16 @@ class _BriefScreenState extends State<BriefScreen> {
     return inner;
   }
 
-  Widget _buildStepContent(NasiraAppState state) {
-    return switch (_schritt) {
-      // Haupt-Sequenz (parser-getrieben, WL-only)
-      _BriefSchritt.begruessung       => _buildGridPage(state, _BriefSchritt.begruessung),
-      _BriefSchritt.personen          => _buildGridPage(state, _BriefSchritt.personen),
-      _BriefSchritt.einleitung        => _buildEinleitung(state),
-      // Inhalt
-      _BriefSchritt.inhaltsuebersicht => _buildGridPage(state, _BriefSchritt.inhaltsuebersicht),
-      // Verabreden
-      _BriefSchritt.verabreden        => _buildGridPage(state, _BriefSchritt.verabreden),
-      _BriefSchritt.verabredenWann    => _buildGridPage(state, _BriefSchritt.verabredenWann),
-      _BriefSchritt.verabredenWas     => _buildGridPage(state, _BriefSchritt.verabredenWas),
-      _BriefSchritt.verabredenWo      => _buildGridPage(state, _BriefSchritt.verabredenWo),
-      // Über dich und mich
-      _BriefSchritt.uberDichUndMich   => _buildGridPage(state, _BriefSchritt.uberDichUndMich),
-      _BriefSchritt.uberDich          => _buildGridPage(state, _BriefSchritt.uberDich),
-      _BriefSchritt.uberMich          => _buildGridPage(state, _BriefSchritt.uberMich),
-      _BriefSchritt.trinken           => _buildGridPage(state, _BriefSchritt.trinken),
-      _BriefSchritt.kleidung          => _buildGridPage(state, _BriefSchritt.kleidung),
-      _BriefSchritt.hobby             => _buildGridPage(state, _BriefSchritt.hobby),
-      _BriefSchritt.essen             => _buildGridPage(state, _BriefSchritt.essen),
-      _BriefSchritt.haustiere         => _buildGridPage(state, _BriefSchritt.haustiere),
-      // Wünsche und Danken
-      _BriefSchritt.wuenscheUndDanken => _buildGridPage(state, _BriefSchritt.wuenscheUndDanken),
-      _BriefSchritt.wuenschen         => _buildGridPage(state, _BriefSchritt.wuenschen),
-      _BriefSchritt.bedanken          => _buildGridPage(state, _BriefSchritt.bedanken),
-      // Sonstiges
-      _BriefSchritt.sonstiges         => _buildGridPage(state, _BriefSchritt.sonstiges),
-      _BriefSchritt.wetter            => _buildGridPage(state, _BriefSchritt.wetter),
-      _BriefSchritt.schule            => _buildGridPage(state, _BriefSchritt.schule),
-      _BriefSchritt.gesundheit        => _buildGridPage(state, _BriefSchritt.gesundheit),
-      _BriefSchritt.gesundheitDetail  => _buildGridPage(state, _BriefSchritt.gesundheitDetail),
-      // Direkt
-      _BriefSchritt.gefuehle          => _buildGridPage(state, _BriefSchritt.gefuehle),
-      _BriefSchritt.beschreibungen    => _buildGridPage(state, _BriefSchritt.beschreibungen),
-      // Abschluss
-      _BriefSchritt.ende              => _buildGridPage(state, _BriefSchritt.ende),
-      _BriefSchritt.endeGruesse       => _buildEndeGruesse(state),
-    };
-  }
+  Widget _buildStepContent(NasiraAppState state) =>
+      _buildGridPage(state, _schritt);
 
   // ── Haupt-Layout-Methode (exaktes X/Y-Grid aus XML) ─────────────────────
 
   Widget _buildGridPage(NasiraAppState state, _BriefSchritt schritt) {
-    final page = _pages[schritt];
+    final page     = _pages[schritt];
     final leitfrage = _leitfragen[schritt] ?? '';
-    final gridName = _stepToGridName[schritt];
 
-    final VoidCallback? onEdit = (page != null && gridName != null)
-        ? () => GridPageEditorSheet.show(
-              context: context,
-              page: page,
-              overrideService: _overrideService,
-              onSaved: () => setState(() {
-                _applyOverrides();
-                _wlPage = 0;
-              }),
-            )
-        : null;
+    final VoidCallback? onEdit = _currentOnEdit();
 
     if (page == null) {
       return Column(children: [
@@ -494,35 +442,39 @@ class _BriefScreenState extends State<BriefScreen> {
     }
 
     return Column(children: [
-      Expanded(child: _buildExactGrid(state, page)),
+      Expanded(child: _buildExactGrid(state, page, schritt)),
       _buildLeitfragenStrip(state, [leitfrage], onEdit: onEdit),
     ]);
   }
 
-  /// Stack-basiertes Grid: jede Zelle sitzt an ihrer exakten XML-Position.
-  ///
-  /// Workspace-Zeilen (Grid3-Texteditor) werden übersprungen —
-  /// deren Funktion übernimmt NasiraModuleHeader.
-  Widget _buildExactGrid(NasiraAppState state, GridPage page) {
-    // Workspace-Zeilen bestimmen und überspringen
-    final wsCell = page.cells
-        .where((c) => c.type == GridCellType.workspace)
-        .firstOrNull;
-    final firstContent = wsCell != null ? wsCell.y + wsCell.rowSpan : 0;
-    final contentRows  = page.rows - firstContent;
-    if (contentRows <= 0) return const SizedBox.shrink();
+  /// Stack-basiertes Grid: rendert die gesamte Seite (Workspace + Nav + Inhalt)
+  /// exakt nach den XML-Koordinaten — 1:1 wie im Grid3-Original.
+  Widget _buildExactGrid(NasiraAppState state, GridPage page, _BriefSchritt schritt) {
+    if (page.rows <= 0) return const SizedBox.shrink();
 
-    final contentCells = page.cells
-        .where((c) => c.type != GridCellType.workspace && c.y >= firstContent)
+    // Für Einleitung: eigene Sätze vor die XML-Wortliste stellen.
+    final wordList = schritt == _BriefSchritt.einleitung
+        ? [
+            ...state.customSentences
+                .forModule('brief')
+                .map((s) => GridWordListItem(text: s.sentence)),
+            ...page.wordList,
+          ]
+        : page.wordList;
+
+    final workspaceCells = page.cells
+        .where((c) => c.type == GridCellType.workspace)
         .toList();
 
-    final autoContent = contentCells
+    final autoContent = page.cells
         .where((c) => c.type == GridCellType.autoContent)
         .toList()
       ..sort((a, b) => a.y != b.y ? a.y.compareTo(b.y) : a.x.compareTo(b.x));
 
-    final regularCells = contentCells
-        .where((c) => c.type != GridCellType.autoContent)
+    final regularCells = page.cells
+        .where((c) =>
+            c.type != GridCellType.workspace &&
+            c.type != GridCellType.autoContent)
         .toList();
 
     const gap = 3.0;
@@ -531,14 +483,24 @@ class _BriefScreenState extends State<BriefScreen> {
       color: page.backgroundColor,
       child: LayoutBuilder(builder: (ctx, box) {
         final cellW = box.maxWidth  / page.columns;
-        final cellH = box.maxHeight / contentRows;
+        final cellH = box.maxHeight / page.rows;
 
         return Stack(children: [
-          // ── Reguläre Zellen ──────────────────────────────────────────────
+          // ── Workspace-Zellen (Text-Editor-Bereich) ───────────────────────
+          for (final cell in workspaceCells)
+            Positioned(
+              left:   cell.x * cellW + gap / 2,
+              top:    cell.y * cellH + gap / 2,
+              width:  cell.colSpan * cellW - gap,
+              height: cell.rowSpan * cellH - gap,
+              child:  _buildWorkspaceCell(state),
+            ),
+
+          // ── Reguläre Zellen (Nav + Inhalt) ───────────────────────────────
           for (final cell in regularCells)
             Positioned(
               left:   cell.x * cellW + gap / 2,
-              top:    (cell.y - firstContent) * cellH + gap / 2,
+              top:    cell.y * cellH + gap / 2,
               width:  cell.colSpan * cellW - gap,
               height: cell.rowSpan * cellH - gap,
               child:  _buildRegularCell(state, cell, page, autoContent.length),
@@ -547,13 +509,12 @@ class _BriefScreenState extends State<BriefScreen> {
           // ── AutoContent-Zellen mit paginierten WL-Items ──────────────────
           for (int i = 0; i < autoContent.length; i++)
             Builder(builder: (_) {
-              final cell   = autoContent[i];
-              final wlIdx  = _wlPage * autoContent.length + i;
-              final item   = wlIdx < page.wordList.length
-                  ? page.wordList[wlIdx] : null;
+              final cell  = autoContent[i];
+              final wlIdx = _wlPage * autoContent.length + i;
+              final item  = wlIdx < wordList.length ? wordList[wlIdx] : null;
               return Positioned(
                 left:   cell.x * cellW + gap / 2,
-                top:    (cell.y - firstContent) * cellH + gap / 2,
+                top:    cell.y * cellH + gap / 2,
                 width:  cell.colSpan * cellW - gap,
                 height: cell.rowSpan * cellH - gap,
                 child:  item != null
@@ -566,6 +527,15 @@ class _BriefScreenState extends State<BriefScreen> {
     );
   }
 
+  /// Rendert die NasiraTextWorkspace-Kachel (Texteingabe-Bereich).
+  Widget _buildWorkspaceCell(NasiraAppState state) {
+    return NasiraTextWorkspace(
+      controller: state.textController,
+      minHeight: 0,
+      maxHeight: double.infinity,
+    );
+  }
+
   /// Rendert eine reguläre (nicht-AutoContent, nicht-Workspace) Zelle.
   Widget _buildRegularCell(
     NasiraAppState state,
@@ -575,8 +545,11 @@ class _BriefScreenState extends State<BriefScreen> {
   ) {
     VoidCallback? onTap;
 
+    VoidCallback? onLongPress;
+
     if (cell.isDeleteWord) {
       onTap = state.deleteLastWord;
+      onLongPress = _confirmClearAll;
     } else if (cell.isBack) {
       onTap = _zurueck;
     } else if (cell.isHome) {
@@ -630,6 +603,7 @@ class _BriefScreenState extends State<BriefScreen> {
       textColor:       cell.foregroundColor,
       fontSize:        cell.style.isOval ? 12 : 11,
       onTap:           onTap,
+      onLongPress:     onLongPress,
       borderRadius:    cell.style.isOval ? 100 : 7,
     );
 
@@ -685,92 +659,6 @@ class _BriefScreenState extends State<BriefScreen> {
     ),
   );
 
-  // ── Flaches Grid (nur für Einleitung mit customSentences) ────────────────
-
-  Widget _buildFlatWordGrid(NasiraAppState state, List<GridWordListItem> words) {
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: GridView.builder(
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 140,
-          crossAxisSpacing: 6,
-          mainAxisSpacing: 6,
-          childAspectRatio: 0.85,
-        ),
-        itemCount: words.length,
-        itemBuilder: (_, i) {
-          final item = words[i];
-          final bg = item.text.endsWith('?')
-              ? NasiraColors.briefQuestion
-              : item.text.endsWith('.') || item.text.endsWith('!')
-                  ? NasiraColors.briefSentence
-                  : NasiraColors.briefTopic;
-          final useCustomPng2 = item.localImagePath != null && item.metacmPath == null;
-          final resolvedPath2 = useCustomPng2 ? null : _resolveSymbol(state, item.symbolStem);
-          return NasiraGridCell(
-            caption:         item.text,
-            fileImagePath:   useCustomPng2 ? item.localImagePath : null,
-            assetPath:       resolvedPath2,
-            symbolWord:      (useCustomPng2 || resolvedPath2 != null)
-                                 ? null
-                                 : _keyWord(item.text),
-            backgroundColor: bg,
-            textColor:       Colors.white,
-            fontSize:        11,
-            onTap:           () => state.insertPhrase(item.text),
-          );
-        },
-      ),
-    );
-  }
-
-  // ── Einleitung (eigener Builder wegen customSentences) ───────────────────
-
-  Widget _buildEinleitung(NasiraAppState state) {
-    // Eigene Sätze aus dem CustomSentenceService voranstellen
-    final custom = state.customSentences
-        .forModule('brief')
-        .map((s) => GridWordListItem(text: s.sentence))
-        .toList();
-
-    // Parser-Sätze aus dem Export
-    final parserWl = _pages[_BriefSchritt.einleitung]?.wordList ?? const [];
-
-    final all = [...custom, ...parserWl];
-
-    return Column(children: [
-      Expanded(child: _buildFlatWordGrid(state, all)),
-      _buildLeitfragenStrip(state, [
-        'Was schreibst du zur Einleitung?',
-        'Was hast du gemacht?',
-      ]),
-    ]);
-  }
-
-  // ── Ende Grüße (bleibt hardcodiert – Grid6 hat Variablen) ────────────────
-
-  Widget _buildEndeGruesse(NasiraAppState state) {
-    const gruesse = [
-      ('Liebe Grüße',     'Liebe'),
-      ('Herzliche Grüße', 'herzlich'),
-      ('Viele Grüße',     'viel'),
-      ('Bis bald',        'bald'),
-      ('Deine Nasira',    'Nasira'),
-    ];
-    return Column(children: [
-      Expanded(child: _buildGrid(
-        itemCount: gruesse.length,
-        builder: (i) => NasiraGridCell(
-          caption: gruesse[i].$1,
-          symbolWord: gruesse[i].$2,
-          backgroundColor: NasiraColors.briefTopic,
-          onTap: () => state.insertPhrase('\n${gruesse[i].$1},\n'),
-        ),
-      )),
-      _buildLeitfragenStrip(state, ['Mit welchem Gruß möchtest du schließen?']),
-    ]);
-  }
-
   // ── Leitfragen-Streifen ──────────────────────────────────────────────────
 
   Widget _buildLeitfragenStrip(
@@ -818,24 +706,4 @@ class _BriefScreenState extends State<BriefScreen> {
     );
   }
 
-  // ── Shared grid helper ───────────────────────────────────────────────────
-
-  Widget _buildGrid({
-    required int itemCount,
-    required Widget Function(int index) builder,
-  }) {
-    return Padding(
-      padding: const EdgeInsets.all(8),
-      child: GridView.builder(
-        itemCount: itemCount,
-        gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-          maxCrossAxisExtent: 140,
-          crossAxisSpacing: 6,
-          mainAxisSpacing: 6,
-          childAspectRatio: 0.85,
-        ),
-        itemBuilder: (_, i) => builder(i),
-      ),
-    );
-  }
 }

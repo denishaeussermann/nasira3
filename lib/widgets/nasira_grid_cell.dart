@@ -22,6 +22,7 @@ class NasiraGridCell extends StatelessWidget {
   final Color textColor;
   final double fontSize;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
   final double borderRadius;
   final double? elevation;
 
@@ -36,6 +37,7 @@ class NasiraGridCell extends StatelessWidget {
     this.textColor = Colors.white,
     this.fontSize = 13,
     this.onTap,
+    this.onLongPress,
     this.borderRadius = 8,
     this.elevation,
   });
@@ -50,6 +52,7 @@ class NasiraGridCell extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(borderRadius),
         onTap: onTap,
+        onLongPress: onLongPress,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(4, 6, 4, 4),
           child: Column(
