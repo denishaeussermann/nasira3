@@ -518,7 +518,23 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
   Future<void> _save() async {
     setState(() => _saving = true);
 
-    // Layout-Overrides
+    final totalRows = _rows + _wsFirstContent;
+
+    // ── Bounds-Validierung: keine Zelle darf außerhalb des Grids liegen ──────
+    for (final c in _cells) {
+      // x-Achse
+      if (c.x < 0) c.x = 0;
+      if (c.x >= _columns) c.x = _columns - 1;
+      if (c.colSpan < 1) c.colSpan = 1;
+      if (c.x + c.colSpan > _columns) c.colSpan = _columns - c.x;
+      // y-Achse (Page-Koordinaten, inkl. Workspace-Offset)
+      if (c.y < _wsFirstContent) c.y = _wsFirstContent;
+      if (c.y >= totalRows) c.y = totalRows - 1;
+      if (c.rowSpan < 1) c.rowSpan = 1;
+      if (c.y + c.rowSpan > totalRows) c.rowSpan = totalRows - c.y;
+    }
+
+    // ── Layout-Overrides ─────────────────────────────────────────────────────
     final layoutOv = <String, Map<String, int>>{};
     for (final c in _cells) {
       if (c.isModified) {
@@ -530,10 +546,9 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
     }
     await widget.overrideService.setLayoutOverrides(widget.pageName, layoutOv);
 
-    // Grid-Größe: gespeichert als Gesamt-Zeilen (inkl. Workspace)
+    // ── Grid-Größe: gespeichert als Gesamt-Zeilen (inkl. Workspace) ──────────
     final origCols = widget.page.columns;
     final origRows = widget.page.rows;
-    final totalRows = _rows + _wsFirstContent;
     if (_columns != origCols || totalRows != origRows) {
       await widget.overrideService.setGridSize(widget.pageName, _columns, totalRows);
     }
@@ -708,75 +723,94 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
 
   Widget _buildGridArea() {
     return LayoutBuilder(builder: (ctx, box) {
-      _cellW = box.maxWidth  / _columns;
-      _cellH = box.maxHeight / _rows;
+      // Header-Band (Workspace + Nav) bekommt denselben Höhen-Anteil
+      // wie im echten Screen: _wsFirstContent / totalRows der Gesamthöhe.
+      final totalRows = _wsFirstContent + _rows;
+      final headerH   = _wsFirstContent > 0
+          ? box.maxHeight * _wsFirstContent / totalRows
+          : 0.0;
+      final contentH  = box.maxHeight - headerH;
 
-      return GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onPanStart:  (d) => _handlePanStart(d.localPosition),
-        onPanUpdate: (d) => _handlePanUpdate(d.localPosition),
-        onPanEnd:    (_) => _handlePanEnd(),
-        child: ColoredBox(
-          color: widget.pageColor,
-          child: Stack(
-            clipBehavior: Clip.hardEdge,
-            children: [
-              // Gitterlinien
-              CustomPaint(
-                size: Size(box.maxWidth, box.maxHeight),
-                painter: _GridPainter(cols: _columns, rows: _rows),
-              ),
+      _cellW = box.maxWidth / _columns;
+      _cellH = contentH / _rows; // nur Inhalts-Zeilen → Drag-Koordinaten stimmen
 
-              // Drop-Target-Vorschau während des Ziehens
-              if (_isDragging && _dropTargetX != null && _dropTargetY != null)
-                Positioned(
-                  left:   _dropTargetX! * _cellW + 3,
-                  top:    (_dropTargetY! - _wsFirstContent) * _cellH + 3,
-                  width:  _dragging!.colSpan * _cellW - 6,
-                  height: _dragging!.rowSpan * _cellH - 6,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      border: Border.all(
-                          color: Colors.white54, width: 2,
-                          style: BorderStyle.solid),
-                      borderRadius: BorderRadius.circular(7),
+      return Column(
+        children: [
+          // ── Workspace + Nav-Band (nicht-interaktiv, visuelle Referenz) ──
+          if (headerH > 0)
+            SizedBox(
+              height: headerH,
+              child: _buildHeaderBand(box.maxWidth, headerH),
+            ),
+          // ── Inhalt-Grid (interaktiv, Drag & Resize) ─────────────────────
+          SizedBox(
+            height: contentH,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onPanStart:  (d) => _handlePanStart(d.localPosition),
+              onPanUpdate: (d) => _handlePanUpdate(d.localPosition),
+              onPanEnd:    (_) => _handlePanEnd(),
+              child: ColoredBox(
+                color: widget.pageColor,
+                child: Stack(
+                  clipBehavior: Clip.hardEdge,
+                  children: [
+                    // Gitterlinien
+                    CustomPaint(
+                      size: Size(box.maxWidth, contentH),
+                      painter: _GridPainter(cols: _columns, rows: _rows),
                     ),
-                  ),
-                ),
 
-              // Stationäre Zellen — Index-basierte Keys (kein Duplikat-Crash)
-              for (int i = 0; i < _cells.length; i++)
-                if (!(_cells[i] == _dragging && _isDragging))
-                  AnimatedPositioned(
-                    key: ValueKey(i),
-                    duration: const Duration(milliseconds: 120),
-                    curve: Curves.easeOut,
-                    left:   _cells[i].x * _cellW + 3,
-                    top:    (_cells[i].y - _wsFirstContent) * _cellH + 3,
-                    width:  _cells[i].colSpan * _cellW - 6,
-                    height: _cells[i].rowSpan * _cellH - 6,
-                    child: _buildCellContent(
-                      _cells[i],
-                      isSelected: _cells[i] == _selected,
-                      isDragging: false,
-                      isResizing: _cells[i] == _selected && _mode == _EditorMode.resizing,
-                    ),
-                  ),
+                    // Drop-Target-Vorschau während des Ziehens
+                    if (_isDragging && _dropTargetX != null && _dropTargetY != null)
+                      Positioned(
+                        left:   _dropTargetX! * _cellW + 3,
+                        top:    (_dropTargetY! - _wsFirstContent) * _cellH + 3,
+                        width:  _dragging!.colSpan * _cellW - 6,
+                        height: _dragging!.rowSpan * _cellH - 6,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            border: Border.all(
+                                color: Colors.white54, width: 2,
+                                style: BorderStyle.solid),
+                            borderRadius: BorderRadius.circular(7),
+                          ),
+                        ),
+                      ),
 
-              // Gezogene Zelle (folgt Zeiger)
-              if (_isDragging && _dragging != null)
-                Positioned(
-                  left:   _dragPos.dx - _dragging!.colSpan * _cellW / 2 + 3,
-                  top:    _dragPos.dy - _dragging!.rowSpan * _cellH / 2 + 3,
-                  width:  _dragging!.colSpan * _cellW - 6,
-                  height: _dragging!.rowSpan * _cellH - 6,
-                  child: _buildCellContent(
-                    _dragging!,
-                    isSelected: false,
-                    isDragging: true,
-                    isResizing: false,
-                  ),
-                ),
+                    // Stationäre Zellen — Index-basierte Keys (kein Duplikat-Crash)
+                    for (int i = 0; i < _cells.length; i++)
+                      if (!(_cells[i] == _dragging && _isDragging))
+                        AnimatedPositioned(
+                          key: ValueKey(i),
+                          duration: const Duration(milliseconds: 120),
+                          curve: Curves.easeOut,
+                          left:   _cells[i].x * _cellW + 3,
+                          top:    (_cells[i].y - _wsFirstContent) * _cellH + 3,
+                          width:  _cells[i].colSpan * _cellW - 6,
+                          height: _cells[i].rowSpan * _cellH - 6,
+                          child: _buildCellContent(
+                            _cells[i],
+                            isSelected: _cells[i] == _selected,
+                            isDragging: false,
+                            isResizing: _cells[i] == _selected && _mode == _EditorMode.resizing,
+                          ),
+                        ),
+
+                    // Gezogene Zelle (folgt Zeiger)
+                    if (_isDragging && _dragging != null)
+                      Positioned(
+                        left:   _dragPos.dx - _dragging!.colSpan * _cellW / 2 + 3,
+                        top:    _dragPos.dy - _dragging!.rowSpan * _cellH / 2 + 3,
+                        width:  _dragging!.colSpan * _cellW - 6,
+                        height: _dragging!.rowSpan * _cellH - 6,
+                        child: _buildCellContent(
+                          _dragging!,
+                          isSelected: false,
+                          isDragging: true,
+                          isResizing: false,
+                        ),
+                      ),
 
               // Resize-Handles (nur bei selektierter Zelle im Ruhezustand)
               if (_selected != null && _mode != _EditorMode.dragging)
@@ -784,8 +818,52 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
             ],
           ),
         ),
+            ),
+          ),
+        ],
       );
     });
+  }
+
+  // ── Header-Band (Workspace + Nav-Vorschau) ────────────────────────────────
+
+  Widget _buildHeaderBand(double width, double height) {
+    final headerCells = widget.page.cells
+        .where((c) => c.y < _wsFirstContent)
+        .toList();
+
+    if (headerCells.isEmpty) {
+      return ColoredBox(
+        color: widget.pageColor.withValues(alpha: 0.6),
+        child: const Center(
+          child: Text('Workspace / Nav',
+              style: TextStyle(color: Colors.white38, fontSize: 10)),
+        ),
+      );
+    }
+
+    final cW = width  / _columns;
+    final cH = height / _wsFirstContent;
+
+    return ColoredBox(
+      color: widget.pageColor.withValues(alpha: 0.6),
+      child: Stack(
+        clipBehavior: Clip.hardEdge,
+        children: [
+          for (final cell in headerCells)
+            Positioned(
+              left:   cell.x * cW + 3,
+              top:    cell.y * cH + 3,
+              width:  cell.colSpan * cW - 6,
+              height: cell.rowSpan * cH - 6,
+              child: Opacity(
+                opacity: 0.55,
+                child: widget.cellBuilder(cell),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   // ── Resize-Handles ────────────────────────────────────────────────────────
