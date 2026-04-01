@@ -954,7 +954,7 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
               child: ColoredBox(
                 color: widget.pageColor,
                 child: Stack(
-                  clipBehavior: Clip.hardEdge,
+                  clipBehavior: Clip.none,
                   children: [
                     // Gitterlinien
                     CustomPaint(

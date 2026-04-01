@@ -401,14 +401,17 @@ class _BriefScreenState extends State<BriefScreen> {
 
     // Für den Editor: AutoContent-Zellen → Wortlisten-Einträge vorberechnen.
     // (AutoContent-Zellen haben keine caption/symbolStem — Inhalt kommt aus wordList.)
+    // WICHTIG: dieselbe step-spezifische Wortliste wie _buildExactGrid verwenden,
+    // damit Fallback-Einträge (z.B. Hallo/Liebe/Lieber bei Begrüßung) auch im Editor sichtbar sind.
     Map<String, GridWordListItem> autoMap = {};
     if (_editorOpen && page != null) {
+      final editorWordList = _effectiveWordList(page, _schritt, state);
       final autoSlots = page.cells
           .where((c) => c.type == GridCellType.autoContent)
           .toList()
         ..sort((a, b) => a.y != b.y ? a.y.compareTo(b.y) : a.x.compareTo(b.x));
-      for (int i = 0; i < autoSlots.length && i < page.wordList.length; i++) {
-        autoMap['${autoSlots[i].x},${autoSlots[i].y}'] = page.wordList[i];
+      for (int i = 0; i < autoSlots.length && i < editorWordList.length; i++) {
+        autoMap['${autoSlots[i].x},${autoSlots[i].y}'] = editorWordList[i];
       }
     }
 
@@ -528,45 +531,48 @@ class _BriefScreenState extends State<BriefScreen> {
     ]);
   }
 
+  /// Gibt die effektive Wortliste für einen Schritt zurück (inkl. step-spezifischer Fallbacks).
+  List<GridWordListItem> _effectiveWordList(
+      GridPage page, _BriefSchritt schritt, NasiraAppState state) =>
+      switch (schritt) {
+        _BriefSchritt.einleitung => [
+            ...state.customSentences
+                .forModule('brief')
+                .map((s) => GridWordListItem(text: s.sentence)),
+            ...page.wordList,
+          ],
+        _BriefSchritt.begruessung => page.wordList.isNotEmpty
+            ? page.wordList
+            : const [
+                GridWordListItem(
+                  text: 'Hallo',
+                  symbolStem: 'hallo2',
+                  symbolCategory: 'konversation_interaktion',
+                  metacmPath: 'konversation_interaktion/hallo2',
+                ),
+                GridWordListItem(
+                  text: 'Liebe',
+                  symbolStem: 'freundin',
+                  symbolCategory: 'liebe_sexualitaet',
+                  metacmPath: 'liebe_sexualitaet/freundin',
+                ),
+                GridWordListItem(
+                  text: 'Lieber',
+                  symbolStem: 'freund',
+                  symbolCategory: 'liebe_sexualitaet',
+                  metacmPath: 'liebe_sexualitaet/freund',
+                ),
+              ],
+        _ => page.wordList,
+      };
+
   /// Stack-basiertes Grid: rendert die gesamte Seite (Workspace + Nav + Inhalt)
   /// exakt nach den XML-Koordinaten — 1:1 wie im Grid3-Original.
   Widget _buildExactGrid(NasiraAppState state, GridPage page, _BriefSchritt schritt) {
     if (page.rows <= 0) return const SizedBox.shrink();
 
-    // Wortliste je Schritt anpassen.
-    final wordList = switch (schritt) {
-      // Einleitung: eigene Sätze vorschalten
-      _BriefSchritt.einleitung => [
-          ...state.customSentences
-              .forModule('brief')
-              .map((s) => GridWordListItem(text: s.sentence)),
-          ...page.wordList,
-        ],
-      // Begrüßung: Hallo / Liebe / Lieber garantiert sichtbar
-      _BriefSchritt.begruessung => page.wordList.isNotEmpty
-          ? page.wordList
-          : const [
-              GridWordListItem(
-                text: 'Hallo',
-                symbolStem: 'hallo2',
-                symbolCategory: 'konversation_interaktion',
-                metacmPath: 'konversation_interaktion/hallo2',
-              ),
-              GridWordListItem(
-                text: 'Liebe',
-                symbolStem: 'freundin',
-                symbolCategory: 'liebe_sexualitaet',
-                metacmPath: 'liebe_sexualitaet/freundin',
-              ),
-              GridWordListItem(
-                text: 'Lieber',
-                symbolStem: 'freund',
-                symbolCategory: 'liebe_sexualitaet',
-                metacmPath: 'liebe_sexualitaet/freund',
-              ),
-            ],
-      _ => page.wordList,
-    };
+    // Wortliste je Schritt anpassen (inkl. Fallbacks).
+    final wordList = _effectiveWordList(page, schritt, state);
 
     final workspaceCells = page.cells
         .where((c) => c.type == GridCellType.workspace)
