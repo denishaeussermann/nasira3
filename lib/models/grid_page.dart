@@ -131,6 +131,15 @@ enum GridCommandType {
   textEditorDelete,   // TextEditor.Delete — aktuelles Dokument löschen
   textEditorPrevious, // TextEditor.Previous — vorheriges Dokument
   textEditorNext,     // TextEditor.Next — nächstes Dokument
+  previousLetter,     // Action.PreviousLetter — Cursor ein Zeichen zurück
+  nextLetter,         // Action.NextLetter — Cursor ein Zeichen vor
+  previousWord,       // Action.PreviousWord — Cursor ein Wort zurück
+  nextWord,           // Action.NextWord — Cursor ein Wort vor
+  previousSentence,   // Action.PreviousSentence — Cursor einen Satz zurück
+  nextSentence,       // Action.NextSentence — Cursor einen Satz vor
+  previousLine,       // Action.PreviousLine — Cursor eine Zeile zurück
+  nextLine,           // Action.NextLine — Cursor eine Zeile vor
+  documentStart,      // Action.DocumentStart — Cursor an Textanfang
   other,
 }
 

@@ -311,6 +311,24 @@ class GridImportService {
         const GridCellCommand(type: GridCommandType.textEditorPrevious),
       'TextEditor.Next' =>
         const GridCellCommand(type: GridCommandType.textEditorNext),
+      'Action.PreviousLetter' =>
+        const GridCellCommand(type: GridCommandType.previousLetter),
+      'Action.NextLetter' =>
+        const GridCellCommand(type: GridCommandType.nextLetter),
+      'Action.PreviousWord' =>
+        const GridCellCommand(type: GridCommandType.previousWord),
+      'Action.NextWord' =>
+        const GridCellCommand(type: GridCommandType.nextWord),
+      'Action.PreviousSentence' =>
+        const GridCellCommand(type: GridCommandType.previousSentence),
+      'Action.NextSentence' =>
+        const GridCellCommand(type: GridCommandType.nextSentence),
+      'Action.PreviousLine' =>
+        const GridCellCommand(type: GridCommandType.previousLine),
+      'Action.NextLine' =>
+        const GridCellCommand(type: GridCommandType.nextLine),
+      'Action.DocumentStart' =>
+        const GridCellCommand(type: GridCommandType.documentStart),
       _ => null,
     };
   }

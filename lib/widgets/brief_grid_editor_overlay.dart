@@ -454,6 +454,15 @@ const _kCommandLabels = <GridCommandType, String>{
   GridCommandType.textEditorDelete:     'Dokument löschen',
   GridCommandType.textEditorPrevious:   'Vorheriges Dokument',
   GridCommandType.textEditorNext:       'Nächstes Dokument',
+  GridCommandType.previousLetter:       'Vorheriger Buchstabe',
+  GridCommandType.nextLetter:           'Nächster Buchstabe',
+  GridCommandType.previousWord:         'Vorheriges Wort',
+  GridCommandType.nextWord:             'Nächstes Wort',
+  GridCommandType.previousSentence:     'Vorheriger Satz',
+  GridCommandType.nextSentence:         'Nächster Satz',
+  GridCommandType.previousLine:         'Vorherige Zeile',
+  GridCommandType.nextLine:             'Nächste Zeile',
+  GridCommandType.documentStart:        'Textanfang',
 };
 
 // ── Mutable Segment (für insertText-Chip-Editor) ──────────────────────────────

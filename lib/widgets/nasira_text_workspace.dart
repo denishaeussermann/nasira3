@@ -100,20 +100,34 @@ class _SymbolTextDisplay extends StatelessWidget {
         return AnimatedBuilder(
           animation: controller,
           builder: (_, __) {
-            final text = controller.text.trim();
+            final text = controller.text;
+            final rawOff = controller.selection.isValid
+                ? controller.selection.baseOffset
+                : text.length;
+            final cursorOff = rawOff.clamp(0, text.length);
 
-            if (text.isEmpty) {
+            if (text.trim().isEmpty) {
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                child: Text(
-                  'Hier entsteht der Text \u2026',
-                  style: TextStyle(color: Colors.grey.shade400, fontSize: 15),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Text(
+                      'Hier entsteht der Text \u2026',
+                      style: TextStyle(color: Colors.grey.shade400, fontSize: 15),
+                    ),
+                    _buildCursorWidget(),
+                  ],
                 ),
               );
             }
 
-            final tokens =
-                text.split(RegExp(r'\s+')).where((t) => t.isNotEmpty).toList();
+            final before = text.substring(0, cursorOff);
+            final after  = text.substring(cursorOff);
+            final beforeTokens =
+                before.split(' ').where((t) => t.isNotEmpty).toList();
+            final afterTokens =
+                after.split(' ').where((t) => t.isNotEmpty).toList();
 
             return Padding(
               padding: const EdgeInsets.all(8),
@@ -121,9 +135,12 @@ class _SymbolTextDisplay extends StatelessWidget {
                 child: Wrap(
                   spacing: 4,
                   runSpacing: 8,
-                  children: tokens
-                      .map((token) => _buildToken(token, data))
-                      .toList(),
+                  crossAxisAlignment: WrapCrossAlignment.end,
+                  children: [
+                    ...beforeTokens.map((t) => _buildToken(t, data)),
+                    _buildCursorWidget(),
+                    ...afterTokens.map((t) => _buildToken(t, data)),
+                  ],
                 ),
               ),
             );
@@ -132,6 +149,13 @@ class _SymbolTextDisplay extends StatelessWidget {
       },
     );
   }
+
+  Widget _buildCursorWidget() => Container(
+        width: 2,
+        height: 50,
+        margin: const EdgeInsets.only(bottom: 8),
+        color: Colors.blue.shade600,
+      );
 
   Widget _buildToken(String token, NasiraData? data) {
     final clean =

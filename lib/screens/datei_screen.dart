@@ -242,6 +242,71 @@ class _DateiScreenState extends State<DateiScreen> {
     _loadDocument(state, newIdx);
   }
 
+  // ── Cursor-Hilfsfunktionen ─────────────────────────────────────────────────
+
+  void _moveCursor(TextEditingController ctrl, int newOffset) {
+    final clamped = newOffset.clamp(0, ctrl.text.length);
+    ctrl.selection = TextSelection.collapsed(offset: clamped);
+  }
+
+  int _prevWordOffset(String text, int offset) {
+    int i = offset;
+    while (i > 0 && text[i - 1] == ' ') { i--; }
+    while (i > 0 && text[i - 1] != ' ') { i--; }
+    return i;
+  }
+
+  int _nextWordOffset(String text, int offset) {
+    int i = offset;
+    while (i < text.length && text[i] != ' ') { i++; }
+    while (i < text.length && text[i] == ' ') { i++; }
+    return i;
+  }
+
+  int _prevSentenceOffset(String text, int offset) {
+    const ends = {'.', '!', '?'};
+    int i = offset - 1;
+    while (i > 0 && !ends.contains(text[i])) { i--; }
+    if (i > 0) { i--; } // vor das Satzzeichen
+    while (i > 0 && !ends.contains(text[i])) { i--; }
+    return i > 0 ? i + 1 : 0;
+  }
+
+  int _nextSentenceOffset(String text, int offset) {
+    const ends = {'.', '!', '?'};
+    int i = offset;
+    while (i < text.length && !ends.contains(text[i])) { i++; }
+    if (i < text.length) { i++; } // nach das Satzzeichen
+    while (i < text.length && text[i] == ' ') { i++; }
+    return i;
+  }
+
+  int _prevLineOffset(String text, int offset) {
+    int i = offset - 1;
+    while (i > 0 && text[i] != '\n') { i--; }
+    if (i > 0) {
+      final lineEnd = i;
+      i--;
+      while (i > 0 && text[i - 1] != '\n') { i--; }
+      final col = offset - (lineEnd + 1);
+      return (i + col).clamp(i, lineEnd);
+    }
+    return 0;
+  }
+
+  int _nextLineOffset(String text, int offset) {
+    int lineStart = offset;
+    while (lineStart > 0 && text[lineStart - 1] != '\n') { lineStart--; }
+    final col = offset - lineStart;
+    int nextNl = offset;
+    while (nextNl < text.length && text[nextNl] != '\n') { nextNl++; }
+    if (nextNl >= text.length) { return text.length; }
+    final nextLineStart = nextNl + 1;
+    int nextLineEnd = nextLineStart;
+    while (nextLineEnd < text.length && text[nextLineEnd] != '\n') { nextLineEnd++; }
+    return (nextLineStart + col).clamp(nextLineStart, nextLineEnd);
+  }
+
   // ── Befehle ausführen ──────────────────────────────────────────────────────
 
   void _run(List<GridCellCommand> cmds, NasiraAppState state) {
@@ -258,6 +323,7 @@ class _DateiScreenState extends State<DateiScreen> {
 
         case GridCommandType.textEditorNew:
           _newDocument(state);
+          return; // Jump.Back danach nicht ausführen (Screen soll offen bleiben)
 
         case GridCommandType.textEditorDelete:
           _deleteDocument(state);
@@ -276,19 +342,64 @@ class _DateiScreenState extends State<DateiScreen> {
 
         case GridCommandType.settingsExit:
           Navigator.pop(context);
+          return;
 
         case GridCommandType.documentEnd:
-          // Cursor ans Ende des Textfelds
           final ctrl = state.textController;
-          ctrl.selection = TextSelection.collapsed(offset: ctrl.text.length);
+          _moveCursor(ctrl, ctrl.text.length);
+
+        case GridCommandType.documentStart:
+          _moveCursor(state.textController, 0);
+
+        case GridCommandType.previousLetter:
+          final ctrl = state.textController;
+          _moveCursor(ctrl, ctrl.selection.baseOffset - 1);
+
+        case GridCommandType.nextLetter:
+          final ctrl = state.textController;
+          _moveCursor(ctrl, ctrl.selection.baseOffset + 1);
+
+        case GridCommandType.previousWord:
+          final ctrl = state.textController;
+          _moveCursor(ctrl,
+              _prevWordOffset(ctrl.text, ctrl.selection.baseOffset));
+
+        case GridCommandType.nextWord:
+          final ctrl = state.textController;
+          _moveCursor(ctrl,
+              _nextWordOffset(ctrl.text, ctrl.selection.baseOffset));
+
+        case GridCommandType.previousSentence:
+          final ctrl = state.textController;
+          _moveCursor(ctrl,
+              _prevSentenceOffset(ctrl.text, ctrl.selection.baseOffset));
+
+        case GridCommandType.nextSentence:
+          final ctrl = state.textController;
+          _moveCursor(ctrl,
+              _nextSentenceOffset(ctrl.text, ctrl.selection.baseOffset));
+
+        case GridCommandType.previousLine:
+          final ctrl = state.textController;
+          _moveCursor(ctrl,
+              _prevLineOffset(ctrl.text, ctrl.selection.baseOffset));
+
+        case GridCommandType.nextLine:
+          final ctrl = state.textController;
+          _moveCursor(ctrl,
+              _nextLineOffset(ctrl.text, ctrl.selection.baseOffset));
+
+        case GridCommandType.deleteLetter:
+          state.deleteLastLetter();
+
+        case GridCommandType.deleteWord:
+          state.deleteLastWord();
 
         case GridCommandType.setBookmark:
         case GridCommandType.pasteText:
         case GridCommandType.printText:
         case GridCommandType.insertText:
         case GridCommandType.punctuation:
-        case GridCommandType.deleteWord:
-        case GridCommandType.deleteLetter:
         case GridCommandType.enter:
         case GridCommandType.moreWords:
         case GridCommandType.capsLock:

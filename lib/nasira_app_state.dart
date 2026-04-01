@@ -113,26 +113,51 @@ class NasiraAppState extends ChangeNotifier {
 
   // ── Text-Manipulation ─────────────────────────────────────────────────
 
+  /// Gibt den aktuellen Cursor-Offset zurück (am Ende, falls ungültig).
+  int get _cursorOffset {
+    final sel = textController.selection;
+    return sel.isValid
+        ? sel.baseOffset.clamp(0, textController.text.length)
+        : textController.text.length;
+  }
+
+  /// Fügt eine vollständige Phrase an der Cursor-Position ein.
+  /// Vor/nach der Phrase wird automatisch ein Leerzeichen ergänzt.
   void insertPhrase(String phrase) {
-    final current = textController.text;
-    final trimmed = current.trimRight();
-    final updated = trimmed.isEmpty ? '$phrase ' : '$trimmed $phrase ';
-    textController.value = TextEditingValue(
+    final ctrl = textController;
+    final text  = ctrl.text;
+    final off   = _cursorOffset;
+    final before = text.substring(0, off);
+    final after  = text.substring(off);
+
+    final trimBefore = before.trimRight();
+    final trimAfter  = after.trimLeft();
+
+    final sep    = trimBefore.isEmpty ? '' : ' ';
+    final suffix = trimAfter.isEmpty  ? ' ' : ' $trimAfter';
+    final updated = trimBefore + sep + phrase + suffix;
+    final newOff  = trimBefore.length + sep.length + phrase.length + 1;
+
+    ctrl.value = TextEditingValue(
       text: updated,
-      selection: TextSelection.collapsed(offset: updated.length),
+      selection: TextSelection.collapsed(offset: newOff.clamp(0, updated.length)),
     );
   }
 
-  /// Fügt ein [WordEntry] ein (ersetzt laufendes Token, wie im Freies Schreiben).
+  /// Fügt ein [WordEntry] ein (ersetzt laufendes Token vor dem Cursor).
   void insertWord(NasiraData data, WordEntry word) {
     symbolLookup.lookup(data, word.text.toLowerCase().trim(), silent: false);
     final insertText =
         word.text.replaceAll(RegExp(r'(?<=[a-zA-ZäöüÄÖÜß])\d+$'), '');
-    final current = textController.text;
-    final updated = _replaceTrailingToken(current, insertText);
-    textController.value = TextEditingValue(
-      text: updated,
-      selection: TextSelection.collapsed(offset: updated.length),
+    final ctrl    = textController;
+    final text    = ctrl.text;
+    final off     = _cursorOffset;
+    final before  = text.substring(0, off);
+    final after   = text.substring(off);
+    final newBefore = _replaceTrailingToken(before, insertText);
+    ctrl.value = TextEditingValue(
+      text: newBefore + after,
+      selection: TextSelection.collapsed(offset: newBefore.length),
     );
   }
 
@@ -146,37 +171,47 @@ class NasiraAppState extends ChangeNotifier {
     return '${trimmedRight.substring(0, lastSpace + 1)}$newWord ';
   }
 
+  /// Löscht das Wort vor dem Cursor.
   void deleteLastWord() {
-    final text = textController.text;
-    final trimmedRight = text.trimRight();
-    final lastSpace = trimmedRight.lastIndexOf(' ');
-    final newText =
+    final ctrl = textController;
+    final text = ctrl.text;
+    final off  = _cursorOffset;
+    final before = text.substring(0, off);
+    final after  = text.substring(off);
+    final trimmedRight = before.trimRight();
+    final lastSpace    = trimmedRight.lastIndexOf(' ');
+    final newBefore    =
         lastSpace == -1 ? '' : trimmedRight.substring(0, lastSpace + 1);
-    textController.value = TextEditingValue(
-      text: newText,
-      selection: TextSelection.collapsed(offset: newText.length),
+    ctrl.value = TextEditingValue(
+      text: newBefore + after,
+      selection: TextSelection.collapsed(offset: newBefore.length),
     );
   }
 
-  /// Hängt ein einzelnes Zeichen / eine kurze Zeichenfolge direkt ans Ende an
-  /// (für Freies Schreiben Tastatur: kein Leerzeichen-Padding, kein Trimmen).
+  /// Fügt ein einzelnes Zeichen / eine kurze Zeichenfolge an der Cursor-Position ein.
   void appendLetter(String chars) {
-    final current = textController.text;
-    final updated = current + chars;
-    textController.value = TextEditingValue(
+    final ctrl = textController;
+    final text = ctrl.text;
+    final off  = _cursorOffset;
+    final updated = text.substring(0, off) + chars + text.substring(off);
+    ctrl.value = TextEditingValue(
       text: updated,
-      selection: TextSelection.collapsed(offset: updated.length),
+      selection: TextSelection.collapsed(offset: off + chars.length),
     );
   }
 
-  /// Löscht das letzte Zeichen (Backspace).
+  /// Löscht das Zeichen vor dem Cursor (Backspace, Unicode-sicher).
   void deleteLastLetter() {
-    final text = textController.text;
+    final ctrl = textController;
+    final text = ctrl.text;
     if (text.isEmpty) return;
-    final updated = text.characters.skipLast(1).string;
-    textController.value = TextEditingValue(
-      text: updated,
-      selection: TextSelection.collapsed(offset: updated.length),
+    final off = _cursorOffset;
+    if (off == 0) return;
+    final beforeChars = text.substring(0, off).characters;
+    final newBefore   = beforeChars.skipLast(1).string;
+    ctrl.value = TextEditingValue(
+      text: newBefore + text.substring(off),
+      selection: TextSelection.collapsed(offset: newBefore.length),
     );
   }
 
