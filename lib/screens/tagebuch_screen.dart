@@ -11,6 +11,7 @@ import '../widgets/grid_layout_editor.dart';
 import '../widgets/nasira_grid_cell.dart';
 import '../widgets/nasira_text_workspace.dart';
 import '../widgets/nasira_title_bar.dart';
+import 'datei_screen.dart';
 
 // ── Hilfsfunktion: Hauptwort für Symbol-Lookup ────────────────────────────────
 
@@ -211,6 +212,11 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
   // ── Navigation ──────────────────────────────────────────────────────────────
 
   void _navigateTo(String pageName) {
+    if (pageName == 'Datei') {
+      Navigator.push(
+          context, MaterialPageRoute(builder: (_) => const DateiScreen()));
+      return;
+    }
     _ensurePage(pageName);
     setState(() {
       _navStack.add(_currentPageName);

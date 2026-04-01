@@ -340,6 +340,7 @@ class _BriefGridEditorOverlayState extends State<BriefGridEditorOverlay> {
     final typeLabel = switch (cell.type) {
       GridCellType.autoContent => 'AutoContent',
       GridCellType.workspace   => 'Workspace',
+      GridCellType.liveCell    => 'LiveCell',
       GridCellType.normal      => 'Normal',
       GridCellType.empty       => 'Leer',
     };
@@ -443,8 +444,16 @@ const _kCommandLabels = <GridCommandType, String>{
   GridCommandType.capsLock:     'Großschreibung (CapsLock)',
   GridCommandType.shift:        'Shift',
   GridCommandType.speak:        'Vorlesen (TTS)',
-  GridCommandType.setBookmark:  'Lesezeichen setzen',
-  GridCommandType.documentEnd:  'Cursor ans Ende',
+  GridCommandType.setBookmark:          'Lesezeichen setzen',
+  GridCommandType.documentEnd:          'Cursor ans Ende',
+  GridCommandType.copyText:             'Text kopieren',
+  GridCommandType.pasteText:            'Text einfügen (Clipboard)',
+  GridCommandType.printText:            'Drucken',
+  GridCommandType.settingsExit:         'Beenden',
+  GridCommandType.textEditorNew:        'Neues Dokument',
+  GridCommandType.textEditorDelete:     'Dokument löschen',
+  GridCommandType.textEditorPrevious:   'Vorheriges Dokument',
+  GridCommandType.textEditorNext:       'Nächstes Dokument',
 };
 
 // ── Mutable Segment (für insertText-Chip-Editor) ──────────────────────────────

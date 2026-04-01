@@ -142,8 +142,9 @@ class GridImportService {
         content.findElements('ContentType').firstOrNull?.innerText;
     final type = switch (contentType) {
       'AutoContent' => GridCellType.autoContent,
-      'Workspace' => GridCellType.workspace,
-      _ => GridCellType.normal,
+      'Workspace'   => GridCellType.workspace,
+      'LiveCell'    => GridCellType.liveCell,
+      _             => GridCellType.normal,
     };
 
     // Caption + Image
@@ -294,6 +295,22 @@ class GridImportService {
         const GridCellCommand(type: GridCommandType.shift),
       'Jump.SetBookmark' =>
         const GridCellCommand(type: GridCommandType.setBookmark),
+      'Action.Copy' =>
+        const GridCellCommand(type: GridCommandType.copyText),
+      'Action.Paste' =>
+        const GridCellCommand(type: GridCommandType.pasteText),
+      'Action.Print' =>
+        const GridCellCommand(type: GridCommandType.printText),
+      'Settings.Exit' =>
+        const GridCellCommand(type: GridCommandType.settingsExit),
+      'TextEditor.New' =>
+        const GridCellCommand(type: GridCommandType.textEditorNew),
+      'TextEditor.Delete' =>
+        const GridCellCommand(type: GridCommandType.textEditorDelete),
+      'TextEditor.Previous' =>
+        const GridCellCommand(type: GridCommandType.textEditorPrevious),
+      'TextEditor.Next' =>
+        const GridCellCommand(type: GridCommandType.textEditorNext),
       _ => null,
     };
   }

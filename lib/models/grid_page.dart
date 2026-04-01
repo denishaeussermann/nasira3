@@ -7,6 +7,7 @@ enum GridCellType {
   normal,      // reguläre Kachel mit Befehl
   autoContent, // dynamischer Slot für WordList-Einträge
   workspace,   // Texteditor-Bereich
+  liveCell,    // LiveCell/TextEditor — Dokumenten-Liste im Datei-Screen
   empty,       // leere/unsichtbare Zelle
 }
 
@@ -114,14 +115,22 @@ enum GridCommandType {
   jumpHome,
   punctuation,
   deleteWord,
-  deleteLetter,  // Action.DeleteLetter — einzelnes Zeichen löschen (Backspace)
+  deleteLetter,       // Action.DeleteLetter — einzelnes Zeichen löschen (Backspace)
   documentEnd,
   enter,
   moreWords,
   setBookmark,
-  capsLock,      // ComputerControl.CapsLock
-  shift,         // ComputerControl.Shift
-  speak,         // Action.Speak
+  capsLock,           // ComputerControl.CapsLock
+  shift,              // ComputerControl.Shift
+  speak,              // Action.Speak
+  copyText,           // Action.Copy — Text in Zwischenablage
+  pasteText,          // Action.Paste — aus Zwischenablage einfügen
+  printText,          // Action.Print — Drucken
+  settingsExit,       // Settings.Exit — Anwendung beenden / Screen schließen
+  textEditorNew,      // TextEditor.New — neues Dokument erstellen
+  textEditorDelete,   // TextEditor.Delete — aktuelles Dokument löschen
+  textEditorPrevious, // TextEditor.Previous — vorheriges Dokument
+  textEditorNext,     // TextEditor.Next — nächstes Dokument
   other,
 }
 
