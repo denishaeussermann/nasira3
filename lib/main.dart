@@ -1,3 +1,4 @@
+import 'dart:io' show Platform;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'embedding_service.dart';
@@ -20,7 +21,7 @@ class NasiraApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
+    final app = MaterialApp(
       title: 'Nasira',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
@@ -29,5 +30,9 @@ class NasiraApp extends StatelessWidget {
       ),
       home: const StartseiteScreen(),
     );
+    // Windows-Accessibility-Bridge erzeugt AXTree-Fehler bei großen Widget-Bäumen.
+    // Deployment-Ziel ist Mobile — auf Windows Semantics deaktivieren.
+    if (Platform.isWindows) return ExcludeSemantics(child: app);
+    return app;
   }
 }
