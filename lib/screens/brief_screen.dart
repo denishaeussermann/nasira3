@@ -236,14 +236,15 @@ class _BriefScreenState extends State<BriefScreen> {
           y:        lOv?['y']        ?? c.y,
           colSpan:  lOv?['colSpan']  ?? c.colSpan,
           rowSpan:  lOv?['rowSpan']  ?? c.rowSpan,
-          caption:      (cOv?['caption']    as String?) ?? c.caption,
-          symbolStem:   (cOv?['symbolStem'] as String?) ?? c.symbolStem,
+          caption:        (cOv?['caption']    as String?) ?? c.caption,
+          symbolStem:     (cOv?['symbolStem'] as String?) ?? c.symbolStem,
           symbolCategory: c.symbolCategory,
-          metacmPath:   c.metacmPath,
+          metacmPath:     c.metacmPath,
           localImagePath: c.localImagePath,
-          iconData: c.iconData,
-          style: c.style, type: c.type,
-          commands: _parseCommandOverrides(cOv) ?? c.commands,
+          iconData:       c.iconData,
+          style:          c.style, type: c.type,
+          commands:       _parseCommandOverrides(cOv) ?? c.commands,
+          shapeOverride:  cOv?['shape'] as String?,
         );
       }).toList();
 
@@ -445,8 +446,8 @@ class _BriefScreenState extends State<BriefScreen> {
       icon:            resolvedIcon,
       backgroundColor: cell.backgroundColor,
       textColor:       cell.foregroundColor,
-      fontSize:        cell.style.isOval ? 12 : 11,
-      borderRadius:    cell.style.isOval ? 100 : 7,
+      fontSize:        cell.isFullyRounded ? 12 : 11,
+      borderRadius:    cell.isFullyRounded ? 100 : 7,
     );
 
     if (cell.hasBorder) {
@@ -667,10 +668,10 @@ class _BriefScreenState extends State<BriefScreen> {
       icon:            cell.iconData,
       backgroundColor: cell.backgroundColor,
       textColor:       cell.foregroundColor,
-      fontSize:        cell.style.isOval ? 12 : 11,
+      fontSize:        cell.isFullyRounded ? 12 : 11,
       onTap:           onTap,
       onLongPress:     onLongPress,
-      borderRadius:    cell.style.isOval ? 100 : 7,
+      borderRadius:    cell.isFullyRounded ? 100 : 7,
     );
 
     if (cell.hasBorder) {

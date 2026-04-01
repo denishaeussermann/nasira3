@@ -142,9 +142,10 @@ class GridOverrideService {
   Map<String, dynamic>? getCellOverride(String gridName, int x, int y) =>
       _cellData[gridName]?['$x,$y'];
 
-  /// Setzt Caption, symbolStem und/oder Befehle für die Zelle (x, y) auf [gridName].
+  /// Setzt Caption, symbolStem, Befehle und/oder Form für die Zelle (x, y) auf [gridName].
   /// [commands]: Liste von Befehl-Maps, z. B. [{'type': 'jumpTo', 'jumpTarget': 'Brief 4'}].
   ///             null = nicht ändern, [] = Befehle löschen.
+  /// [shape]: 'roundedRect' | 'oval' | 'pill' | null (null = nicht ändern).
   Future<void> setCellOverride(
     String gridName,
     int x,
@@ -152,6 +153,7 @@ class GridOverrideService {
     String? caption,
     String? symbolStem,
     List<Map<String, dynamic>>? commands,
+    String? shape,
   }) async {
     _cellData.putIfAbsent(gridName, () => {});
     final key      = '$x,$y';
@@ -159,6 +161,7 @@ class GridOverrideService {
     if (caption    != null) existing['caption']    = caption;
     if (symbolStem != null) existing['symbolStem'] = symbolStem;
     if (commands   != null) existing['commands']   = commands;
+    if (shape      != null) existing['shape']      = shape;
     _cellData[gridName]![key] = existing;
     await _save();
   }

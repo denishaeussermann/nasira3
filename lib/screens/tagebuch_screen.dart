@@ -137,6 +137,7 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
         style:          c.style,
         type:           c.type,
         commands:       _parseCommandOverrides(cOv) ?? c.commands,
+        shapeOverride:  cOv?['shape'] as String?,
       );
     }).toList();
 
@@ -426,10 +427,10 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
       icon:            cell.iconData,
       backgroundColor: cell.backgroundColor,
       textColor:       cell.foregroundColor,
-      fontSize:        cell.style.isOval ? 12 : 11,
+      fontSize:        cell.isFullyRounded ? 12 : 11,
       onTap:           onTap,
       onLongPress:     onLongPress,
-      borderRadius:    cell.style.isOval ? 100 : 7,
+      borderRadius:    cell.isFullyRounded ? 100 : 7,
     );
 
     if (cell.hasBorder) {
@@ -498,8 +499,8 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
       symbolWord:      fallbackWord,
       backgroundColor: cell.backgroundColor,
       textColor:       cell.foregroundColor,
-      fontSize:        cell.style.isOval ? 12 : 11,
-      borderRadius:    cell.style.isOval ? 100 : 7,
+      fontSize:        cell.isFullyRounded ? 12 : 11,
+      borderRadius:    cell.isFullyRounded ? 100 : 7,
     );
 
     if (cell.hasBorder) {

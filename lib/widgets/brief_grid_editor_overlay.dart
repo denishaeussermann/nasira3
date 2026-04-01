@@ -234,7 +234,7 @@ class _BriefGridEditorOverlayState extends State<BriefGridEditorOverlay> {
         ? cell.caption!
         : cell.insertText?.trim() ?? '';
 
-    final radius = cell.style.isOval ? 100.0 : 6.0;
+    final radius = cell.isFullyRounded ? 100.0 : 6.0;
 
     return GestureDetector(
       onTap: () => _selectCell(cell),
@@ -363,7 +363,7 @@ class _BriefGridEditorOverlayState extends State<BriefGridEditorOverlay> {
             decoration: BoxDecoration(
               color: cell.backgroundColor,
               borderRadius:
-                  BorderRadius.circular(cell.style.isOval ? 21 : 6),
+                  BorderRadius.circular(cell.isFullyRounded ? 21 : 6),
               border: Border.all(color: Colors.white30),
             ),
           ),
@@ -444,21 +444,45 @@ const _kCommandLabels = <GridCommandType, String>{
   GridCommandType.speak:        'Vorlesen (TTS)',
 };
 
+/// Hält den veränderbaren Zustand eines einzelnen Befehls im Editor.
+class _CmdEntry {
+  GridCommandType? type;
+  final TextEditingController paramCtrl;
+
+  _CmdEntry(this.type, String param)
+      : paramCtrl = TextEditingController(text: param);
+
+  /// Wandelt in JSON-Map um (für Override-Service).
+  Map<String, dynamic> toJson() {
+    if (type == null) return {};
+    final m = <String, dynamic>{'type': type!.name};
+    final p = paramCtrl.text;
+    if (type == GridCommandType.insertText)  { m['insertText']  = p; }
+    else if (type == GridCommandType.jumpTo) { m['jumpTarget']  = p.trim(); }
+    else if (type == GridCommandType.punctuation) {
+      m['punctuation'] = p.isNotEmpty ? p[0] : '.';
+    }
+    return m;
+  }
+
+  void dispose() => paramCtrl.dispose();
+}
+
 class _CellEditorSheetState extends State<_CellEditorSheet> {
   late TextEditingController _captionCtrl;
   late TextEditingController _searchCtrl;
-  late TextEditingController _insertTextCtrl;
-  late TextEditingController _jumpTargetCtrl;
-  late TextEditingController _punctuationCtrl;
 
   /// Der aktuell gewählte Symbol-Stem (null = kein Override).
   String? _pendingStem;
 
+  /// Form-Überschreibung: 'roundedRect' | 'oval' | 'pill' | null (= Originalform).
+  String? _pendingShape;
+
   /// Suchergebnisse (Asset-Pfade).
   List<String> _searchResults = const [];
 
-  /// Aktuell gewählter Befehlstyp (null = kein Befehl).
-  GridCommandType? _cmdType;
+  /// Alle Befehle dieser Zelle (kann leer sein).
+  List<_CmdEntry> _commands = [];
 
   bool _saving = false;
 
@@ -474,31 +498,27 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
           widget.cell.insertText?.trim() ??
           '',
     );
-    _pendingStem = existing?['symbolStem'] as String? ?? widget.cell.symbolStem;
+    _pendingStem  = existing?['symbolStem'] as String? ?? widget.cell.symbolStem;
+    _pendingShape = existing?['shape']      as String?;
     _searchCtrl = TextEditingController(text: _pendingStem ?? '');
 
-    // Befehl initialisieren: Override hat Vorrang, sonst erster XML-Befehl
+    // Befehle laden: Override hat Vorrang, sonst alle XML-Befehle
     final rawCmds = existing?['commands'] as List?;
-    if (rawCmds != null && rawCmds.isNotEmpty) {
-      final m = rawCmds.first as Map<String, dynamic>;
-      _cmdType = GridCommandType.values.firstWhere(
-        (t) => t.name == (m['type'] as String? ?? ''),
-        orElse: () => GridCommandType.other,
-      );
-      _insertTextCtrl  = TextEditingController(text: m['insertText']  as String? ?? '');
-      _jumpTargetCtrl  = TextEditingController(text: m['jumpTarget']  as String? ?? '');
-      _punctuationCtrl = TextEditingController(text: m['punctuation'] as String? ?? '');
-    } else if (widget.cell.commands.isNotEmpty) {
-      final cmd = widget.cell.commands.first;
-      _cmdType         = cmd.type;
-      _insertTextCtrl  = TextEditingController(text: cmd.insertText  ?? '');
-      _jumpTargetCtrl  = TextEditingController(text: cmd.jumpTarget  ?? '');
-      _punctuationCtrl = TextEditingController(text: cmd.punctuation ?? '');
+    if (rawCmds != null) {
+      _commands = rawCmds.map((e) {
+        final m    = e as Map<String, dynamic>;
+        final type = GridCommandType.values.firstWhere(
+          (t) => t.name == (m['type'] as String? ?? ''),
+          orElse: () => GridCommandType.other,
+        );
+        final param = (m['insertText'] ?? m['jumpTarget'] ?? m['punctuation'] ?? '') as String;
+        return _CmdEntry(type, param);
+      }).toList();
     } else {
-      _cmdType         = null;
-      _insertTextCtrl  = TextEditingController();
-      _jumpTargetCtrl  = TextEditingController();
-      _punctuationCtrl = TextEditingController();
+      _commands = widget.cell.commands.map((cmd) {
+        final param = cmd.insertText ?? cmd.jumpTarget ?? cmd.punctuation ?? '';
+        return _CmdEntry(cmd.type, param);
+      }).toList();
     }
   }
 
@@ -506,9 +526,7 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
   void dispose() {
     _captionCtrl.dispose();
     _searchCtrl.dispose();
-    _insertTextCtrl.dispose();
-    _jumpTargetCtrl.dispose();
-    _punctuationCtrl.dispose();
+    for (final c in _commands) { c.dispose(); }
     super.dispose();
   }
 
@@ -536,23 +554,11 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
     setState(() => _saving = true);
     final caption = _captionCtrl.text.trim();
 
-    // Befehlsliste aus Dialog-Feldern zusammenstellen
-    List<Map<String, dynamic>>? commands;
-    if (_cmdType != null) {
-      final cmd = <String, dynamic>{'type': _cmdType!.name};
-      if (_cmdType == GridCommandType.insertText) {
-        cmd['insertText'] = _insertTextCtrl.text;
-      } else if (_cmdType == GridCommandType.jumpTo) {
-        cmd['jumpTarget'] = _jumpTargetCtrl.text.trim();
-      } else if (_cmdType == GridCommandType.punctuation) {
-        cmd['punctuation'] = _punctuationCtrl.text.isNotEmpty
-            ? _punctuationCtrl.text[0]
-            : '.';
-      }
-      commands = [cmd];
-    } else {
-      commands = []; // Leere Liste = alle Befehle entfernen
-    }
+    // Befehlsliste aus allen _CmdEntry zusammenstellen
+    final commands = _commands
+        .where((c) => c.type != null)
+        .map((c) => c.toJson())
+        .toList();
 
     await widget.overrideService.setCellOverride(
       widget.pageName,
@@ -561,6 +567,7 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
       caption:    caption.isNotEmpty ? caption : null,
       symbolStem: _pendingStem,
       commands:   commands,
+      shape:      _pendingShape,
     );
     if (mounted) Navigator.pop(context, true);
   }
@@ -589,6 +596,116 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
       widget.pageName, widget.cell.x, widget.cell.y,
     );
     if (mounted) Navigator.pop(context, true);
+  }
+
+  // ── Einzelne Befehl-Zeile ─────────────────────────────────────────────────
+
+  Widget _buildCommandRow(int index) {
+    final entry = _commands[index];
+    final needsParam = entry.type == GridCommandType.insertText ||
+        entry.type == GridCommandType.jumpTo ||
+        entry.type == GridCommandType.punctuation;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(10, 8, 6, 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF253525),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.white12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              // Nummer
+              SizedBox(
+                width: 20,
+                child: Text('${index + 1}.',
+                    style: const TextStyle(
+                        color: Colors.white38, fontSize: 11)),
+              ),
+              // Typ-Dropdown
+              Expanded(
+                child: DropdownButton<GridCommandType?>(
+                  value: entry.type,
+                  isExpanded: true,
+                  dropdownColor: const Color(0xFF253525),
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  underline: const SizedBox.shrink(),
+                  hint: const Text('Funktion wählen …',
+                      style: TextStyle(color: Colors.white38, fontSize: 12)),
+                  items: [
+                    const DropdownMenuItem(
+                        value: null,
+                        child: Text('— Keine —',
+                            style: TextStyle(color: Colors.white38))),
+                    ...GridCommandType.values
+                        .where((t) => _kCommandLabels.containsKey(t))
+                        .map((t) => DropdownMenuItem(
+                              value: t,
+                              child: Text(_kCommandLabels[t]!,
+                                  style: const TextStyle(fontSize: 12)),
+                            )),
+                  ],
+                  onChanged: (val) => setState(() => entry.type = val),
+                ),
+              ),
+              // Reihenfolge: hoch
+              if (index > 0)
+                IconButton(
+                  icon: const Icon(Icons.arrow_upward,
+                      size: 16, color: Colors.white38),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  onPressed: () => setState(() {
+                    _commands.insert(index - 1, _commands.removeAt(index));
+                  }),
+                ),
+              // Reihenfolge: runter
+              if (index < _commands.length - 1)
+                IconButton(
+                  icon: const Icon(Icons.arrow_downward,
+                      size: 16, color: Colors.white38),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                  onPressed: () => setState(() {
+                    _commands.insert(index + 1, _commands.removeAt(index));
+                  }),
+                ),
+              // Löschen
+              IconButton(
+                icon: const Icon(Icons.close, size: 16, color: Colors.red),
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                onPressed: () => setState(() {
+                  _commands[index].dispose();
+                  _commands.removeAt(index);
+                }),
+              ),
+            ],
+          ),
+          // Parameter-Feld (typ-abhängig)
+          if (needsParam) ...[
+            const SizedBox(height: 6),
+            TextField(
+              controller: entry.paramCtrl,
+              style: const TextStyle(color: Colors.white, fontSize: 13),
+              maxLines: entry.type == GridCommandType.insertText ? 2 : 1,
+              maxLength: entry.type == GridCommandType.punctuation ? 1 : null,
+              decoration: _inputDeco(
+                entry.type == GridCommandType.insertText
+                    ? 'Text …'
+                    : entry.type == GridCommandType.jumpTo
+                        ? 'Zielseiten-Name (exakt)'
+                        : 'Zeichen (. , ? ! …)',
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
   }
 
   InputDecoration _inputDeco(String hint) => InputDecoration(
@@ -844,70 +961,58 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
                     ),
                   ],
 
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 20),
 
-                  // ── Funktion / Befehl ────────────────────────────────────
-                  const Text('Funktion',
+                  // ── Form ────────────────────────────────────────────────
+                  const Text('Form',
                       style: TextStyle(
                           color: Colors.white70,
                           fontSize: 12,
                           fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<GridCommandType?>(
-                    initialValue: _cmdType,
-                    dropdownColor: const Color(0xFF2A3E2A),
-                    style: const TextStyle(color: Colors.white, fontSize: 13),
-                    decoration: InputDecoration(
-                      filled: true,
-                      fillColor: const Color(0xFF2A3E2A),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(8),
-                        borderSide: BorderSide.none,
-                      ),
-                      contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 10),
-                    ),
-                    items: [
-                      const DropdownMenuItem(
-                          value: null,
-                          child: Text('Keine Funktion',
-                              style: TextStyle(color: Colors.white54))),
-                      ...GridCommandType.values
-                          .where((t) => _kCommandLabels.containsKey(t))
-                          .map((t) => DropdownMenuItem(
-                                value: t,
-                                child: Text(_kCommandLabels[t]!),
-                              )),
-                    ],
-                    onChanged: (val) => setState(() => _cmdType = val),
+                  const SizedBox(height: 8),
+                  _ShapeSelector(
+                    value: _pendingShape,
+                    onChanged: (v) => setState(() => _pendingShape = v),
                   ),
 
-                  // Bedingte Eingabefelder je nach Befehlstyp
-                  if (_cmdType == GridCommandType.insertText) ...[
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _insertTextCtrl,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: _inputDeco('Einzufügender Text …'),
-                    ),
-                  ],
-                  if (_cmdType == GridCommandType.jumpTo) ...[
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _jumpTargetCtrl,
-                      style: const TextStyle(color: Colors.white),
-                      decoration: _inputDeco('Zielseiten-Name (exakt wie im Grid3-Export)'),
-                    ),
-                  ],
-                  if (_cmdType == GridCommandType.punctuation) ...[
-                    const SizedBox(height: 10),
-                    TextField(
-                      controller: _punctuationCtrl,
-                      style: const TextStyle(color: Colors.white),
-                      maxLength: 1,
-                      decoration: _inputDeco('Zeichen (z. B. . , ? ! …)'),
-                    ),
-                  ],
+                  const SizedBox(height: 24),
+
+                  // ── Funktionen / Befehle (Liste) ─────────────────────────
+                  Row(
+                    children: [
+                      const Text('Funktionen',
+                          style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                      const Spacer(),
+                      TextButton.icon(
+                        onPressed: () => setState(
+                            () => _commands.add(_CmdEntry(null, ''))),
+                        icon: const Icon(Icons.add, size: 14),
+                        label: const Text('Hinzufügen',
+                            style: TextStyle(fontSize: 12)),
+                        style: TextButton.styleFrom(
+                            foregroundColor: NasiraColors.navGreen),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+
+                  if (_commands.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2A3E2A),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text('Keine Funktion',
+                          style: TextStyle(
+                              color: Colors.white38, fontSize: 13)),
+                    )
+                  else
+                    for (int i = 0; i < _commands.length; i++)
+                      _buildCommandRow(i),
 
                   const SizedBox(height: 80), // Platz für Footer
                 ],
@@ -1008,6 +1113,91 @@ class _SymbolPreview extends StatelessWidget {
             ),
           const SizedBox(width: 12),
         ],
+      ),
+    );
+  }
+}
+
+// ── Form-Auswahl (3 Toggle-Buttons) ──────────────────────────────────────────
+
+class _ShapeSelector extends StatelessWidget {
+  /// Aktuell gewählte Form: 'roundedRect' | 'oval' | 'pill' | null (= Original).
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  const _ShapeSelector({required this.value, required this.onChanged});
+
+  static const _shapes = [
+    ('roundedRect', 'Abgerundet', 8.0),
+    ('oval',        'Oval',       100.0),
+    ('pill',        'Pille',      100.0),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        // "Original"-Button
+        _ShapeBtn(
+          label: 'Original',
+          borderRadius: 8,
+          isSelected: value == null,
+          onTap: () => onChanged(null),
+        ),
+        const SizedBox(width: 6),
+        for (final (key, label, radius) in _shapes) ...[
+          _ShapeBtn(
+            label: label,
+            borderRadius: radius,
+            isSelected: value == key,
+            onTap: () => onChanged(key),
+          ),
+          const SizedBox(width: 6),
+        ],
+      ],
+    );
+  }
+}
+
+class _ShapeBtn extends StatelessWidget {
+  final String label;
+  final double borderRadius;
+  final bool isSelected;
+  final VoidCallback onTap;
+
+  const _ShapeBtn({
+    required this.label,
+    required this.borderRadius,
+    required this.isSelected,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 120),
+        width: 68,
+        height: 44,
+        decoration: BoxDecoration(
+          color: isSelected ? NasiraColors.navGreen : const Color(0xFF2A3E2A),
+          borderRadius: BorderRadius.circular(borderRadius.clamp(0, 22)),
+          border: Border.all(
+            color: isSelected ? Colors.white : Colors.white24,
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        alignment: Alignment.center,
+        child: Text(
+          label,
+          style: TextStyle(
+            color: isSelected ? Colors.white : Colors.white60,
+            fontSize: 10,
+            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+          ),
+          textAlign: TextAlign.center,
+        ),
       ),
     );
   }

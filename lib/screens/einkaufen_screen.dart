@@ -258,6 +258,7 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
         rowSpan: lOv['rowSpan'] ?? c.rowSpan,
         caption: c.caption, symbolStem: c.symbolStem,
         style: c.style, type: c.type, commands: c.commands,
+        shapeOverride: c.shapeOverride,
       );
     }).toList();
     _effectivePage = GridPage(

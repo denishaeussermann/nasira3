@@ -107,6 +107,7 @@ class _FreiesSchreibenScreenState extends State<FreiesSchreibenScreen> {
         style:          c.style,
         type:           c.type,
         commands:       _parseCommandOverrides(cOv) ?? c.commands,
+        shapeOverride:  cOv?['shape'] as String?,
       );
     }).toList();
 

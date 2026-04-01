@@ -945,7 +945,7 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
     else if (isSelected) { borderColor = Colors.white; borderWidth = 2.5; }
     else                 { borderColor = Colors.white.withValues(alpha: 0.50); borderWidth = 1.0; }
 
-    final radius = cell.src.style.isOval ? 1000.0 : 7.0;
+    final radius = cell.src.isFullyRounded ? 1000.0 : 7.0;
 
     return Opacity(
       opacity: isDragging ? 0.82 : 1.0,
@@ -1011,7 +1011,7 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
             decoration: BoxDecoration(
               color: cell.src.backgroundColor,
               borderRadius:
-                  BorderRadius.circular(cell.src.style.isOval ? 16 : 5),
+                  BorderRadius.circular(cell.src.isFullyRounded ? 16 : 5),
               border: Border.all(color: Colors.white30),
             ),
           ),

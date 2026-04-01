@@ -135,6 +135,10 @@ class GridCell {
   final GridCellType type;
   final List<GridCellCommand> commands;
 
+  /// Optionale Form-Überschreibung: 'roundedRect' | 'oval' | 'pill' | null.
+  /// null = Standardform aus [style] verwenden.
+  final String? shapeOverride;
+
   const GridCell({
     required this.x,
     required this.y,
@@ -149,11 +153,22 @@ class GridCell {
     required this.style,
     required this.type,
     required this.commands,
+    this.shapeOverride,
   });
 
   Color get backgroundColor => style.backgroundColor;
   Color get foregroundColor => style.foregroundColor;
   bool get hasBorder => style.hasBorder;
+
+  /// Ob die Zelle oval/elliptisch dargestellt wird (Override hat Vorrang).
+  bool get isOval => shapeOverride == 'oval' ||
+      (shapeOverride == null && style.isOval);
+
+  /// Ob die Zelle als Pille (Kapsel) dargestellt wird.
+  bool get isPill => shapeOverride == 'pill';
+
+  /// Ob die Zelle vollständig abgerundet dargestellt wird (oval oder pille).
+  bool get isFullyRounded => isOval || isPill;
 
   /// Text der eingefügt wird (Action.InsertText)
   String? get insertText => commands
