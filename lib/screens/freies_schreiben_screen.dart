@@ -79,22 +79,34 @@ class _FreiesSchreibenScreenState extends State<FreiesSchreibenScreen> {
 
   /// Wendet gespeicherte Layout-Overrides auf eine GridPage an.
   GridPage _applyOverride(String name, GridPage raw) {
+    final cellOv   = _overrideService.getAllCellOverrides(name);
     final layoutOv = _overrideService.getLayoutOverrides(name);
     final sizeOv   = _overrideService.getGridSize(name);
-    if (layoutOv == null && sizeOv == null) return raw;
+
+    final hasCellOv   = cellOv   != null && cellOv.isNotEmpty;
+    final hasLayoutOv = layoutOv != null && layoutOv.isNotEmpty;
+
+    if (!hasCellOv && !hasLayoutOv && sizeOv == null) return raw;
 
     final cells = raw.cells.map((c) {
-      final lOv = layoutOv?['${c.x},${c.y}'];
-      if (lOv == null) return c;
+      final key = '${c.x},${c.y}';
+      final cOv = hasCellOv   ? cellOv[key]   : null;
+      final lOv = hasLayoutOv ? layoutOv[key] : null;
+      if (cOv == null && lOv == null) return c;
       return GridCell(
-        x:       lOv['x']       ?? c.x,
-        y:       lOv['y']       ?? c.y,
-        colSpan: lOv['colSpan'] ?? c.colSpan,
-        rowSpan: lOv['rowSpan'] ?? c.rowSpan,
-        caption: c.caption, metacmPath: c.metacmPath,
-        symbolStem: c.symbolStem, symbolCategory: c.symbolCategory,
-        localImagePath: c.localImagePath, iconData: c.iconData,
-        style: c.style, type: c.type, commands: c.commands,
+        x:              lOv?['x']        ?? c.x,
+        y:              lOv?['y']        ?? c.y,
+        colSpan:        lOv?['colSpan']  ?? c.colSpan,
+        rowSpan:        lOv?['rowSpan']  ?? c.rowSpan,
+        caption:        (cOv?['caption']    as String?) ?? c.caption,
+        symbolStem:     (cOv?['symbolStem'] as String?) ?? c.symbolStem,
+        symbolCategory: c.symbolCategory,
+        metacmPath:     c.metacmPath,
+        localImagePath: c.localImagePath,
+        iconData:       c.iconData,
+        style:          c.style,
+        type:           c.type,
+        commands:       _parseCommandOverrides(cOv) ?? c.commands,
       );
     }).toList();
 
@@ -106,6 +118,24 @@ class _FreiesSchreibenScreenState extends State<FreiesSchreibenScreen> {
       cells:           cells,
       wordList:        raw.wordList,
     );
+  }
+
+  static List<GridCellCommand>? _parseCommandOverrides(Map<String, dynamic>? cOv) {
+    final raw = cOv?['commands'] as List?;
+    if (raw == null) return null;
+    return raw.map((e) {
+      final m = e as Map<String, dynamic>;
+      final type = GridCommandType.values.firstWhere(
+        (t) => t.name == (m['type'] as String? ?? ''),
+        orElse: () => GridCommandType.other,
+      );
+      return GridCellCommand(
+        type:        type,
+        insertText:  m['insertText']  as String?,
+        jumpTarget:  m['jumpTarget']  as String?,
+        punctuation: m['punctuation'] as String?,
+      );
+    }).toList();
   }
 
   /// Seite neu laden (nach Editor-Änderung): Cache leeren + XML+Override neu einlesen.

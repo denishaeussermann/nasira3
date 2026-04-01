@@ -136,7 +136,7 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
         iconData:       c.iconData,
         style:          c.style,
         type:           c.type,
-        commands:       c.commands,
+        commands:       _parseCommandOverrides(cOv) ?? c.commands,
       );
     }).toList();
 
@@ -148,6 +148,24 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
       cells:           cells,
       wordList:        wl ?? raw.wordList,
     );
+  }
+
+  static List<GridCellCommand>? _parseCommandOverrides(Map<String, dynamic>? cOv) {
+    final raw = cOv?['commands'] as List?;
+    if (raw == null) return null;
+    return raw.map((e) {
+      final m = e as Map<String, dynamic>;
+      final type = GridCommandType.values.firstWhere(
+        (t) => t.name == (m['type'] as String? ?? ''),
+        orElse: () => GridCommandType.other,
+      );
+      return GridCellCommand(
+        type:        type,
+        insertText:  m['insertText']  as String?,
+        jumpTarget:  m['jumpTarget']  as String?,
+        punctuation: m['punctuation'] as String?,
+      );
+    }).toList();
   }
 
   // ── Navigation ──────────────────────────────────────────────────────────────

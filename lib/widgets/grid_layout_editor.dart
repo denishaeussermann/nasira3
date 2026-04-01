@@ -113,6 +113,9 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
   // ── Selektion ─────────────────────────────────────────────────────────────
   _EditCell? _selected;
 
+  // ── Doppeltippen (Zell-Inhalts-Editor öffnen) ─────────────────────────────
+  Offset _doubleTapPos = Offset.zero;
+
   // ── Grid-Metriken (aus LayoutBuilder) ────────────────────────────────────
   double _cellW = 1, _cellH = 1;
 
@@ -129,28 +132,22 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
   void initState() {
     super.initState();
     _columns = widget.page.columns;
-    _rebuildCells(); // setzt _wsFirstContent
-    _rows = widget.page.rows - _wsFirstContent;
+    _rebuildCells(); // setzt _wsFirstContent = 0, alle Zellen inkl. Workspace
+    _rows = widget.page.rows;
   }
 
-  /// Befüllt _cells (ohne Workspace-Zellen) und setzt _wsFirstContent.
+  /// Befüllt _cells mit ALLEN Zellen (inkl. Workspace) und setzt _wsFirstContent = 0.
   ///
   /// Wenn [widget.rawPage] gesetzt ist, werden rawX/rawY aus der Rohseite bezogen
   /// und die aktuellen Positionen aus den gespeicherten Layout-Overrides initialisiert.
   /// Dadurch sind Override-Schlüssel immer stabil (Rohposition), unabhängig davon,
   /// ob der Editor auf einer bereits-angewendeten Seite geöffnet wird.
   void _rebuildCells() {
-    final srcPage = widget.rawPage ?? widget.page;
-
-    final wsCell = srcPage.cells
-        .where((c) => c.type == GridCellType.workspace)
-        .firstOrNull;
-    _wsFirstContent = wsCell != null ? wsCell.y + wsCell.rowSpan : 0;
+    _wsFirstContent = 0; // Alle Zeilen editierbar – kein Header-Band-Offset
 
     if (widget.rawPage == null) {
       // Kein rawPage: einfacher Pfad (synthetische Seiten ohne Rohvorlage)
       _cells = widget.page.cells
-          .where((c) => c.type != GridCellType.workspace)
           .map(_EditCell.new)
           .toList()
         ..sort((a, b) => a.y != b.y ? a.y.compareTo(b.y) : a.x.compareTo(b.x));
@@ -177,7 +174,6 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
     }
 
     _cells = widget.rawPage!.cells
-        .where((c) => c.type != GridCellType.workspace)
         .map((rawCell) {
           final rawKey     = '${rawCell.x},${rawCell.y}';
           final displayCell = rawKeyToApplied[rawKey] ?? rawCell;
@@ -351,7 +347,16 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
           _selected!.rowSpan = (_resizeStartRowSpan + (dy / _cellH).round())
               .clamp(1, _rows - (_selected!.y - _wsFirstContent));
         }
-        _autoPlaceAround(_selected!, _cells.where((c) => c != _selected).toList());
+        // Nur reflow wenn die resizete Zelle tatsächlich eine andere überlappt
+        final dispY = _selected!.y - _wsFirstContent;
+        final hasOverlap = _cells.any((c) =>
+          c != _selected &&
+          c.x < _selected!.x + _selected!.colSpan && c.x + c.colSpan > _selected!.x &&
+          (c.y - _wsFirstContent) < dispY + _selected!.rowSpan &&
+          (c.y - _wsFirstContent) + c.rowSpan > dispY);
+        if (hasOverlap) {
+          _autoPlaceAround(_selected!, _cells.where((c) => c != _selected).toList());
+        }
         _hasChanges = true;
       });
       return;
@@ -466,6 +471,73 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
     });
   }
 
+  // ── Doppeltippen → Zell-Inhalts-Editor ───────────────────────────────────
+
+  void _handleDoubleTap() {
+    final col = (_doubleTapPos.dx / _cellW).floor().clamp(0, _columns - 1);
+    final row = (_doubleTapPos.dy / _cellH).floor().clamp(0, _rows - 1);
+    // Finde Zelle die diesen Grid-Punkt abdeckt
+    final hit = _cells.firstWhere(
+      (c) => col >= c.x && col < c.x + c.colSpan &&
+             row >= c.y && row < c.y + c.rowSpan,
+      orElse: () => _cells.first, // wird unten geprüft
+    );
+    // Nur öffnen wenn Treffer wirklich auf der Zelle liegt
+    if (col >= hit.x && col < hit.x + hit.colSpan &&
+        row >= hit.y && row < hit.y + hit.rowSpan) {
+      BriefGridEditorOverlay.showCellSheet(
+        context: context,
+        cell: hit.src,
+        pageName: widget.pageName,
+        overrideService: widget.overrideService,
+        onChanged: widget.onChanged,
+      );
+    }
+  }
+
+  // ── Ghost-Kacheln für leere Gitterpositionen ──────────────────────────────
+
+  List<Widget> _buildGhostCells() {
+    // Belegungs-Matrix aufbauen
+    final occ = List.generate(_rows, (_) => List.filled(_columns, false));
+    for (final c in _cells) {
+      for (int r = c.y; r < c.y + c.rowSpan && r < _rows; r++) {
+        for (int col = c.x; col < c.x + c.colSpan && col < _columns; col++) {
+          if (r >= 0 && col >= 0) occ[r][col] = true;
+        }
+      }
+    }
+    final ghosts = <Widget>[];
+    for (int r = 0; r < _rows; r++) {
+      for (int col = 0; col < _columns; col++) {
+        if (!occ[r][col]) {
+          ghosts.add(Positioned(
+            left:   col * _cellW + 3,
+            top:    r   * _cellH + 3,
+            width:  _cellW - 6,
+            height: _cellH - 6,
+            child: IgnorePointer(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Colors.white12,
+                    width: 1,
+                    style: BorderStyle.solid,
+                  ),
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: const Center(
+                  child: Icon(Icons.add, size: 14, color: Colors.white12),
+                ),
+              ),
+            ),
+          ));
+        }
+      }
+    }
+    return ghosts;
+  }
+
   // ── Grid-Dimensionen anpassen ─────────────────────────────────────────────
 
   void _addColumn() => setState(() {
@@ -518,7 +590,7 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
   Future<void> _save() async {
     setState(() => _saving = true);
 
-    final totalRows = _rows + _wsFirstContent;
+    final totalRows = _rows; // _wsFirstContent ist immer 0
 
     // ── Bounds-Validierung: keine Zelle darf außerhalb des Grids liegen ──────
     for (final c in _cells) {
@@ -527,8 +599,8 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
       if (c.x >= _columns) c.x = _columns - 1;
       if (c.colSpan < 1) c.colSpan = 1;
       if (c.x + c.colSpan > _columns) c.colSpan = _columns - c.x;
-      // y-Achse (Page-Koordinaten, inkl. Workspace-Offset)
-      if (c.y < _wsFirstContent) c.y = _wsFirstContent;
+      // y-Achse
+      if (c.y < 0) c.y = 0;
       if (c.y >= totalRows) c.y = totalRows - 1;
       if (c.rowSpan < 1) c.rowSpan = 1;
       if (c.y + c.rowSpan > totalRows) c.rowSpan = totalRows - c.y;
@@ -587,8 +659,8 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
     if (mounted) {
       setState(() {
         _columns = widget.page.columns;
-        _rebuildCells(); // setzt _wsFirstContent neu
-        _rows = widget.page.rows - _wsFirstContent;
+        _rebuildCells(); // setzt _wsFirstContent = 0
+        _rows = widget.page.rows;
         _hasChanges = false;
         _selected   = null;
       });
@@ -723,30 +795,21 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
 
   Widget _buildGridArea() {
     return LayoutBuilder(builder: (ctx, box) {
-      // Header-Band (Workspace + Nav) bekommt denselben Höhen-Anteil
-      // wie im echten Screen: _wsFirstContent / totalRows der Gesamthöhe.
-      final totalRows = _wsFirstContent + _rows;
-      final headerH   = _wsFirstContent > 0
-          ? box.maxHeight * _wsFirstContent / totalRows
-          : 0.0;
-      final contentH  = box.maxHeight - headerH;
+      // Alle Zeilen (inkl. Workspace) sind editierbar – kein Header-Band-Offset.
+      final contentH = box.maxHeight;
 
       _cellW = box.maxWidth / _columns;
-      _cellH = contentH / _rows; // nur Inhalts-Zeilen → Drag-Koordinaten stimmen
+      _cellH = contentH / _rows;
 
       return Column(
         children: [
-          // ── Workspace + Nav-Band (nicht-interaktiv, visuelle Referenz) ──
-          if (headerH > 0)
-            SizedBox(
-              height: headerH,
-              child: _buildHeaderBand(box.maxWidth, headerH),
-            ),
-          // ── Inhalt-Grid (interaktiv, Drag & Resize) ─────────────────────
+          // ── Volles Grid (alle Zeilen, inkl. Workspace) ────────────────────
           SizedBox(
             height: contentH,
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
+              onDoubleTapDown: (d) => _doubleTapPos = d.localPosition,
+              onDoubleTap:     _handleDoubleTap,
               onPanStart:  (d) => _handlePanStart(d.localPosition),
               onPanUpdate: (d) => _handlePanUpdate(d.localPosition),
               onPanEnd:    (_) => _handlePanEnd(),
@@ -760,6 +823,9 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
                       size: Size(box.maxWidth, contentH),
                       painter: _GridPainter(cols: _columns, rows: _rows),
                     ),
+
+                    // Leere Gitterpositionen als anklickbare Platzhalter
+                    ..._buildGhostCells(),
 
                     // Drop-Target-Vorschau während des Ziehens
                     if (_isDragging && _dropTargetX != null && _dropTargetY != null)
@@ -823,47 +889,6 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
         ],
       );
     });
-  }
-
-  // ── Header-Band (Workspace + Nav-Vorschau) ────────────────────────────────
-
-  Widget _buildHeaderBand(double width, double height) {
-    final headerCells = widget.page.cells
-        .where((c) => c.y < _wsFirstContent)
-        .toList();
-
-    if (headerCells.isEmpty) {
-      return ColoredBox(
-        color: widget.pageColor.withValues(alpha: 0.6),
-        child: const Center(
-          child: Text('Workspace / Nav',
-              style: TextStyle(color: Colors.white38, fontSize: 10)),
-        ),
-      );
-    }
-
-    final cW = width  / _columns;
-    final cH = height / _wsFirstContent;
-
-    return ColoredBox(
-      color: widget.pageColor.withValues(alpha: 0.6),
-      child: Stack(
-        clipBehavior: Clip.hardEdge,
-        children: [
-          for (final cell in headerCells)
-            Positioned(
-              left:   cell.x * cW + 3,
-              top:    cell.y * cH + 3,
-              width:  cell.colSpan * cW - 6,
-              height: cell.rowSpan * cH - 6,
-              child: Opacity(
-                opacity: 0.55,
-                child: widget.cellBuilder(cell),
-              ),
-            ),
-        ],
-      ),
-    );
   }
 
   // ── Resize-Handles ────────────────────────────────────────────────────────
@@ -1014,11 +1039,11 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
           ),
           IconButton(
             icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 20),
-            tooltip: 'Caption / Symbol bearbeiten',
-            onPressed: () => BriefGridEditorOverlay.show(
+            tooltip: 'Beschriftung / Symbol / Funktion bearbeiten',
+            onPressed: () => BriefGridEditorOverlay.showCellSheet(
               context: context,
-              pages: {widget.pageName: widget.page},
-              initialPage: widget.pageName,
+              cell: cell.src,
+              pageName: widget.pageName,
               overrideService: widget.overrideService,
               onChanged: widget.onChanged,
             ),

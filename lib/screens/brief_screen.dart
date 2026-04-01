@@ -242,7 +242,8 @@ class _BriefScreenState extends State<BriefScreen> {
           metacmPath:   c.metacmPath,
           localImagePath: c.localImagePath,
           iconData: c.iconData,
-          style: c.style, type: c.type, commands: c.commands,
+          style: c.style, type: c.type,
+          commands: _parseCommandOverrides(cOv) ?? c.commands,
         );
       }).toList();
 
@@ -255,6 +256,26 @@ class _BriefScreenState extends State<BriefScreen> {
         wordList: wl ?? existing.wordList,
       );
     }
+  }
+
+  /// Wandelt rohe JSON-Befehlsliste aus einem Cell-Override in GridCellCommands um.
+  /// Gibt null zurück wenn kein commands-Eintrag vorhanden (→ Original behalten).
+  static List<GridCellCommand>? _parseCommandOverrides(Map<String, dynamic>? cOv) {
+    final raw = cOv?['commands'] as List?;
+    if (raw == null) return null;
+    return raw.map((e) {
+      final m = e as Map<String, dynamic>;
+      final type = GridCommandType.values.firstWhere(
+        (t) => t.name == (m['type'] as String? ?? ''),
+        orElse: () => GridCommandType.other,
+      );
+      return GridCellCommand(
+        type:        type,
+        insertText:  m['insertText']  as String?,
+        jumpTarget:  m['jumpTarget']  as String?,
+        punctuation: m['punctuation'] as String?,
+      );
+    }).toList();
   }
 
   // ── Navigation ──────────────────────────────────────────────────────────────
@@ -392,9 +413,10 @@ class _BriefScreenState extends State<BriefScreen> {
 
   /// Rendert eine Zelle für den Layout-Editor (ohne onTap — Editor verwaltet Gesten).
   Widget _buildCellForEditor(NasiraAppState state, GridCell cell) {
+    // Caption-Fallback: auch jumpTarget anzeigen wenn kein Text vorhanden
     final displayCaption = cell.caption?.isNotEmpty == true
         ? cell.caption
-        : cell.insertText?.trim();
+        : cell.insertText?.trim() ?? cell.jumpTarget;
     final useLocalPng = cell.localImagePath != null;
     final resolvedAssetPath = useLocalPng ? null : _resolveSymbol(state, cell.symbolStem);
     final fallbackWord = (useLocalPng || resolvedAssetPath != null) ? null :
@@ -405,12 +427,22 @@ class _BriefScreenState extends State<BriefScreen> {
                 ? _keyWord(displayCaption)
                 : null));
 
+    // Icon-Fallback: von Command-Typ ableiten wenn kein XML-Icon vorhanden
+    IconData? resolvedIcon = cell.iconData;
+    if (resolvedIcon == null) {
+      if (cell.isHome)                                   { resolvedIcon = Icons.home_outlined; }
+      else if (cell.isBack)                              { resolvedIcon = Icons.arrow_back_rounded; }
+      else if (cell.isDeleteWord || cell.isDeleteLetter) { resolvedIcon = Icons.backspace_outlined; }
+      else if (cell.isCapsLock)                          { resolvedIcon = Icons.keyboard_capslock_rounded; }
+      else if (cell.isShiftKey)                          { resolvedIcon = Icons.arrow_upward_rounded; }
+    }
+
     final inner = NasiraGridCell(
       caption:         displayCaption,
       fileImagePath:   cell.localImagePath,
       assetPath:       resolvedAssetPath,
       symbolWord:      fallbackWord,
-      icon:            cell.iconData,
+      icon:            resolvedIcon,
       backgroundColor: cell.backgroundColor,
       textColor:       cell.foregroundColor,
       fontSize:        cell.style.isOval ? 12 : 11,
