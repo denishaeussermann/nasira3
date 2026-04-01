@@ -443,6 +443,8 @@ const _kCommandLabels = <GridCommandType, String>{
   GridCommandType.capsLock:     'Großschreibung (CapsLock)',
   GridCommandType.shift:        'Shift',
   GridCommandType.speak:        'Vorlesen (TTS)',
+  GridCommandType.setBookmark:  'Lesezeichen setzen',
+  GridCommandType.documentEnd:  'Cursor ans Ende',
 };
 
 // ── Mutable Segment (für insertText-Chip-Editor) ──────────────────────────────
@@ -705,7 +707,7 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
               // Typ-Dropdown
               Expanded(
                 child: DropdownButton<GridCommandType?>(
-                  value: entry.type,
+                  value: _kCommandLabels.containsKey(entry.type) ? entry.type : null,
                   isExpanded: true,
                   dropdownColor: const Color(0xFF253525),
                   style: const TextStyle(color: Colors.white, fontSize: 12),
