@@ -55,13 +55,13 @@
 **Status: ERLEDIGT**
 **Notizen:** GridPageEditorSheet mit Symbol-Suche (_WordListItemDialog); Wortliste-Button (list_alt) in GridLayoutEditor-Toolbar, nur sichtbar wenn AutoContent-Zellen vorhanden.
 
-### ☐ 16 — Zelle kopieren / einfügen
-**Status: OFFEN**
-**Was:** In-Memory Clipboard im Editor-State, Ctrl+C / Ctrl+V
+### ✅ 16 — Zelle kopieren / einfügen
+**Status: ERLEDIGT**
+**Notizen:** _clipboard (GridCell?) in GridLayoutEditorState; Copy/Paste-Buttons in InfoPanel; Ghost-Zellen zeigen Paste-Icon wenn Clipboard gefüllt.
 
-### ☐ 20 — Neue Zelle erstellen (Ghost → real)
-**Status: OFFEN**
-**Was:** Virtual-Cell-Konzept im Override-Service
+### ✅ 20 — Neue Zelle erstellen (Ghost → real)
+**Status: ERLEDIGT**
+**Notizen:** Ghost-Doppeltippen öffnet Editor mit leerer Zelle (x,y); nach Speichern erzeugt _applyOverrides die Zelle als Virtual Cell aus Orphan-Override. Kein separates Datenmodell nötig.
 
 ---
 

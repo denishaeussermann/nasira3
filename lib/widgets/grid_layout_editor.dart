@@ -114,6 +114,9 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
   // ── Selektion ─────────────────────────────────────────────────────────────
   _EditCell? _selected;
 
+  // ── Clipboard (Kopieren / Einfügen) ───────────────────────────────────────
+  GridCell? _clipboard;
+
   // ── Doppeltippen (Zell-Inhalts-Editor öffnen) ─────────────────────────────
   Offset _doubleTapPos = Offset.zero;
 
@@ -477,23 +480,30 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
   void _handleDoubleTap() {
     final col = (_doubleTapPos.dx / _cellW).floor().clamp(0, _columns - 1);
     final row = (_doubleTapPos.dy / _cellH).floor().clamp(0, _rows - 1);
-    // Finde Zelle die diesen Grid-Punkt abdeckt
-    final hit = _cells.firstWhere(
+
+    // Existierende Zelle an diesem Punkt suchen
+    final hit = _cells.where(
       (c) => col >= c.x && col < c.x + c.colSpan &&
              row >= c.y && row < c.y + c.rowSpan,
-      orElse: () => _cells.first, // wird unten geprüft
+    ).firstOrNull;
+
+    // Zelle für den Editor: existierende oder leere Ghost-Zelle
+    final editorCell = hit != null
+        ? hit.src
+        : GridCell(
+            x: col, y: row,
+            style: GridCellStyle.actionNav,
+            type:  GridCellType.normal,
+            commands: const [],
+          );
+
+    BriefGridEditorOverlay.showCellSheet(
+      context: context,
+      cell: editorCell,
+      pageName: widget.pageName,
+      overrideService: widget.overrideService,
+      onChanged: widget.onChanged,
     );
-    // Nur öffnen wenn Treffer wirklich auf der Zelle liegt
-    if (col >= hit.x && col < hit.x + hit.colSpan &&
-        row >= hit.y && row < hit.y + hit.rowSpan) {
-      BriefGridEditorOverlay.showCellSheet(
-        context: context,
-        cell: hit.src,
-        pageName: widget.pageName,
-        overrideService: widget.overrideService,
-        onChanged: widget.onChanged,
-      );
-    }
   }
 
   // ── Ghost-Kacheln für leere Gitterpositionen ──────────────────────────────
@@ -512,23 +522,37 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
     for (int r = 0; r < _rows; r++) {
       for (int col = 0; col < _columns; col++) {
         if (!occ[r][col]) {
+          final gc = col, gr = r;
           ghosts.add(Positioned(
-            left:   col * _cellW + 3,
-            top:    r   * _cellH + 3,
+            left:   gc * _cellW + 3,
+            top:    gr * _cellH + 3,
             width:  _cellW - 6,
             height: _cellH - 6,
-            child: IgnorePointer(
+            child: Tooltip(
+              message: _clipboard != null
+                  ? 'Doppeltippen: neue Zelle / Inhalt einfügen'
+                  : 'Doppeltippen: neue Zelle erstellen',
               child: DecoratedBox(
                 decoration: BoxDecoration(
+                  color: _clipboard != null
+                      ? NasiraColors.navGreen.withValues(alpha: 0.08)
+                      : Colors.transparent,
                   border: Border.all(
-                    color: Colors.white12,
+                    color: _clipboard != null
+                        ? NasiraColors.navGreen.withValues(alpha: 0.35)
+                        : Colors.white12,
                     width: 1,
-                    style: BorderStyle.solid,
                   ),
                   borderRadius: BorderRadius.circular(5),
                 ),
-                child: const Center(
-                  child: Icon(Icons.add, size: 14, color: Colors.white12),
+                child: Center(
+                  child: Icon(
+                    _clipboard != null ? Icons.paste_outlined : Icons.add,
+                    size: 14,
+                    color: _clipboard != null
+                        ? NasiraColors.navGreen.withValues(alpha: 0.5)
+                        : Colors.white12,
+                  ),
                 ),
               ),
             ),
@@ -667,6 +691,52 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
       });
       widget.onChanged();
     }
+  }
+
+  // ── Kopieren / Einfügen ───────────────────────────────────────────────────
+
+  void _copySelected() {
+    if (_selected == null) return;
+    setState(() => _clipboard = _selected!.src);
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Zelle kopiert'),
+        duration: Duration(seconds: 1),
+        backgroundColor: NasiraColors.navGreen,
+      ),
+    );
+  }
+
+  Future<void> _pasteToSelected() async {
+    final target = _selected;
+    final src    = _clipboard;
+    if (target == null || src == null) return;
+
+    // Befehle → JSON
+    final cmds = src.commands.map((c) {
+      final m = <String, dynamic>{'type': c.type.name};
+      if (c.insertText  != null) m['insertText']  = c.insertText;
+      if (c.jumpTarget  != null) m['jumpTarget']  = c.jumpTarget;
+      if (c.punctuation != null) m['punctuation'] = c.punctuation;
+      return m;
+    }).toList();
+
+    String? hexOf(Color? c) =>
+        c?.toARGB32().toRadixString(16).padLeft(8, '0');
+
+    await widget.overrideService.setCellOverride(
+      widget.pageName,
+      target.rawX,
+      target.rawY,
+      caption:         src.caption,
+      symbolStem:      src.symbolStem,
+      commands:        cmds,
+      shape:           src.shapeOverride,
+      backgroundColor: hexOf(src.backgroundColorOverride) ?? '',
+      fontColor:       hexOf(src.fontColorOverride) ?? '',
+      fontSize:        src.fontSizeOverride,
+    );
+    widget.onChanged();
   }
 
   // ── Build ─────────────────────────────────────────────────────────────────
@@ -1052,6 +1122,21 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
               ],
             ),
           ),
+          // Kopieren
+          IconButton(
+            icon: const Icon(Icons.copy_outlined,
+                color: Colors.white54, size: 18),
+            tooltip: 'Zelle kopieren',
+            onPressed: _copySelected,
+          ),
+          // Einfügen — nur wenn Clipboard gefüllt
+          if (_clipboard != null)
+            IconButton(
+              icon: const Icon(Icons.paste_outlined,
+                  color: Colors.white70, size: 18),
+              tooltip: 'Inhalt einfügen',
+              onPressed: _pasteToSelected,
+            ),
           IconButton(
             icon: const Icon(Icons.edit_outlined, color: Colors.white70, size: 20),
             tooltip: 'Beschriftung / Symbol / Funktion bearbeiten',

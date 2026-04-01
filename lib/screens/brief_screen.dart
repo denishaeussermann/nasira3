@@ -251,6 +251,32 @@ class _BriefScreenState extends State<BriefScreen> {
         );
       }).toList();
 
+      // Virtuelle Zellen: Overrides an Positionen, die keine XML-Zelle haben
+      if (hasCellOv) {
+        final occupied = { for (final c in cells) '${c.x},${c.y}' };
+        for (final e in cellOv.entries) {
+          if (occupied.contains(e.key)) continue;
+          final parts = e.key.split(',');
+          if (parts.length != 2) continue;
+          final vx = int.tryParse(parts[0]);
+          final vy = int.tryParse(parts[1]);
+          if (vx == null || vy == null) continue;
+          final cOv = e.value;
+          cells.add(GridCell(
+            x: vx, y: vy, colSpan: 1, rowSpan: 1,
+            caption:                cOv['caption']    as String?,
+            symbolStem:             cOv['symbolStem'] as String?,
+            style:                  GridCellStyle.actionNav,
+            type:                   GridCellType.normal,
+            commands:               _parseCommandOverrides(cOv) ?? const [],
+            shapeOverride:          cOv['shape']           as String?,
+            backgroundColorOverride: _hexToColor(cOv['backgroundColor'] as String?),
+            fontColorOverride:       _hexToColor(cOv['fontColor']       as String?),
+            fontSizeOverride:        (cOv['fontSize'] as num?)?.toDouble(),
+          ));
+        }
+      }
+
       _pages[entry.key] = GridPage(
         name: existing.name,
         columns: sizeOv?['columns'] ?? existing.columns,
