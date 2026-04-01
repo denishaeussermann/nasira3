@@ -9,6 +9,7 @@ import 'tagebuch_screen.dart';
 import 'einkaufen_screen.dart';
 import 'setup_screen.dart';
 import 'datei_screen.dart';
+import 'user_grids_screen.dart';
 
 // ── Startseite ───────────────────────────────────────────────────────────────
 //
@@ -209,9 +210,9 @@ class _StartseiteScreenState extends State<StartseiteScreen> {
         // Einstellungen (Long-Press für Admin)
         _smallCell(
           icon: Icons.grid_view_rounded,
-          label: 'Raster',
-          color: NasiraColors.navTaupe,
-          onTap: _openAdminIfPinCorrect,
+          label: 'Meine Grids',
+          color: NasiraColors.navGreen,
+          onTap: () => _push(const UserGridsScreen()),
         ),
         SizedBox(width: gap),
         _smallCell(

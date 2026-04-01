@@ -69,8 +69,11 @@
 ### ✅ 19 — Undo / Redo
 **Status: ERLEDIGT**
 **Notizen:** _GridState + _UndoEntry in GridOverrideService; setCellOverride + clearCellOverride + saveLayoutChanges pushen auf _undoStack; undo()/redo() stellen per _restoreGrid wieder her; GridLayoutEditor: didUpdateWidget reinit, _performUndo/_performRedo, Undo/Redo-Buttons in Toolbar.
+### ✅ 23 — Neues Grid erstellen
+**Status: ERLEDIGT**
+**Notizen:** GridOverrideService: _userGridMeta (JSON-Schlüssel _userGridMeta), createUserGrid/deleteUserGrid/listUserGrids/buildUserGridPage; UserGridsScreen (Liste + FAB + Lösch-Dialog); _UserGridEditorPage (GridLayoutEditor ohne XML-Rohseite); _NewGridDialog mit _Counter (Spalten/Zeilen); Startseite: „Meine Grids"-Kachel (navGreen, ersetzt Raster).
+
 ### ☐ 22 — InsertText mit eingebettetem Symbol (Rich Text)
-### ☐ 23 — Neues Grid erstellen
 
 ---
 

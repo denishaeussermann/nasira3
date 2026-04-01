@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart' show Color, Colors;
 import 'package:path_provider/path_provider.dart';
 
 import '../models/grid_page.dart';
@@ -51,6 +52,8 @@ class GridOverrideService {
   final Map<String, Map<String, Map<String, int>>> _layoutData = {};
   // pageName → { columns, rows }
   final Map<String, Map<String, int>> _gridSizeData = {};
+  // User-erstellte Grids: gridName → { columns, rows }
+  final Map<String, Map<String, int>> _userGridMeta = {};
   bool _loaded = false;
 
   // ── Undo / Redo ───────────────────────────────────────────────────────────
@@ -79,7 +82,16 @@ class GridOverrideService {
         return;
       }
       final outer = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      // Metadaten-Schlüssel (Präfix '_') separat laden
+      final rawMeta = outer['_userGridMeta'] as Map<String, dynamic>?;
+      if (rawMeta != null) {
+        for (final e in rawMeta.entries) {
+          _userGridMeta[e.key] = (e.value as Map<String, dynamic>)
+              .map((k, v) => MapEntry(k, v as int));
+        }
+      }
       for (final entry in outer.entries) {
+        if (entry.key.startsWith('_')) continue; // Metadaten überspringen
         final inner = entry.value as Map<String, dynamic>;
         final wl = (inner['wordList'] as List<dynamic>? ?? [])
             .cast<Map<String, dynamic>>();
@@ -117,20 +129,22 @@ class GridOverrideService {
   Future<void> _save() async {
     try {
       final file  = await _getFile();
-      final pages = <String, dynamic>{};
+      final result = <String, dynamic>{
+        if (_userGridMeta.isNotEmpty) '_userGridMeta': _userGridMeta,
+      };
       final allKeys = {
         ..._data.keys, ..._cellData.keys,
         ..._layoutData.keys, ..._gridSizeData.keys,
       };
       for (final key in allKeys) {
-        pages[key] = {
+        result[key] = {
           if (_data.containsKey(key))         'wordList': _data[key],
           if (_cellData.containsKey(key))     'cells':    _cellData[key],
           if (_layoutData.containsKey(key))   'layout':   _layoutData[key],
           if (_gridSizeData.containsKey(key)) 'gridSize': _gridSizeData[key],
         };
       }
-      await file.writeAsString(jsonEncode(pages));
+      await file.writeAsString(jsonEncode(result));
     } catch (e) {
       debugPrint('[GridOverride] save error: $e');
     }
@@ -365,6 +379,90 @@ class GridOverrideService {
   Future<void> clearGridSize(String gridName) async {
     _gridSizeData.remove(gridName);
     await _save();
+  }
+
+  // ── Öffentliche API — User-Grids ─────────────────────────────────────────
+
+  /// Alle vom User erstellten Grids, alphabetisch sortiert.
+  List<({String name, int columns, int rows})> listUserGrids() =>
+      (_userGridMeta.entries
+              .map((e) => (
+                    name: e.key,
+                    columns: e.value['columns'] ?? 8,
+                    rows: e.value['rows'] ?? 5,
+                  ))
+              .toList()
+            ..sort((a, b) => a.name.compareTo(b.name)));
+
+  /// Legt ein neues User-Grid an und speichert es.
+  Future<void> createUserGrid(String name, int columns, int rows) async {
+    _userGridMeta[name] = {'columns': columns, 'rows': rows};
+    await _save();
+  }
+
+  /// Löscht ein User-Grid mit allen zugehörigen Overrides.
+  Future<void> deleteUserGrid(String name) async {
+    _userGridMeta.remove(name);
+    _cellData.remove(name);
+    _layoutData.remove(name);
+    _gridSizeData.remove(name);
+    _undoStack.removeWhere((e) => e.gridName == name);
+    _redoStack.removeWhere((e) => e.gridName == name);
+    await _save();
+  }
+
+  /// Baut eine [GridPage] für ein User-Grid aus den gespeicherten Overrides.
+  ///
+  /// User-Grids haben keine XML-Rohseite — alle Zellen entstehen aus [_cellData].
+  GridPage buildUserGridPage(String name) {
+    final meta    = _userGridMeta[name] ?? {'columns': 8, 'rows': 5};
+    final sizeOv  = getGridSize(name);
+    final cols    = sizeOv?['columns'] ?? meta['columns']!;
+    final rows    = sizeOv?['rows']    ?? meta['rows']!;
+    final cellOv  = getAllCellOverrides(name);
+    final layoutOv = getLayoutOverrides(name);
+
+    final cells = <GridCell>[];
+    if (cellOv != null) {
+      for (final e in cellOv.entries) {
+        final parts = e.key.split(',');
+        if (parts.length != 2) continue;
+        final rawX = int.tryParse(parts[0]) ?? 0;
+        final rawY = int.tryParse(parts[1]) ?? 0;
+        final cOv  = e.value;
+        final lOv  = layoutOv?[e.key];
+        cells.add(GridCell(
+          x:       lOv?['x']       ?? rawX,
+          y:       lOv?['y']       ?? rawY,
+          colSpan: lOv?['colSpan'] ?? 1,
+          rowSpan: lOv?['rowSpan'] ?? 1,
+          caption:    cOv['caption']    as String?,
+          symbolStem: cOv['symbolStem'] as String?,
+          style:    GridCellStyle.actionNav,
+          type:     GridCellType.normal,
+          commands: const [],
+          shapeOverride:           cOv['shape']           as String?,
+          backgroundColorOverride: _hexToColor(cOv['backgroundColor'] as String?),
+          fontColorOverride:       _hexToColor(cOv['fontColor']       as String?),
+          fontSizeOverride:        (cOv['fontSize'] as num?)?.toDouble(),
+        ));
+      }
+    }
+    return GridPage(
+      name:            name,
+      columns:         cols,
+      rows:            rows,
+      backgroundColor: Colors.white,
+      cells:           cells,
+      wordList:        const [],
+    );
+  }
+
+  /// Parst einen 8-stelligen AARRGGBB-Hex-String in eine [Color] (oder null).
+  static Color? _hexToColor(String? hex) {
+    if (hex == null || hex.length != 8) return null;
+    final val = int.tryParse(hex, radix: 16);
+    return val == null ? null : Color(val);
   }
 
   // ── Serialisierung ────────────────────────────────────────────────────────
