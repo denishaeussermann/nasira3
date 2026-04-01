@@ -38,10 +38,9 @@
 **Status: ERLEDIGT**
 **Notizen:** _ColorSwatchPicker (24 Farben aus Nasira-Palette), backgroundColorOverride + fontColorOverride in GridCell, hex-Kodierung AARRGGBB, alle _applyOverride-Methoden aktualisiert.
 
-### ☐ 7 — Schriftgröße
-**Status: OFFEN**
-**Dateien:** `brief_grid_editor_overlay.dart`, `grid_override_service.dart`, alle _applyOverride
-**Was:** Schieberegler 8–40pt, speichern als `fontSize` (double)
+### ✅ 7 — Schriftgröße
+**Status: ERLEDIGT**
+**Notizen:** Slider 8–40pt im Sheet, fontSizeOverride in GridCell, Screens nutzen fontSizeOverride ?? Standardgröße.
 
 ### ☐ 14 — Style-System (Named Styles)
 **Status: OFFEN**

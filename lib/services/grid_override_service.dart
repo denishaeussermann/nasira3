@@ -158,6 +158,7 @@ class GridOverrideService {
     String? shape,
     String? backgroundColor,
     String? fontColor,
+    double? fontSize,
   }) async {
     _cellData.putIfAbsent(gridName, () => {});
     final key      = '$x,$y';
@@ -174,6 +175,7 @@ class GridOverrideService {
       if (fontColor.isEmpty) { existing.remove('fontColor'); }
       else { existing['fontColor'] = fontColor; }
     }
+    if (fontSize != null) existing['fontSize'] = fontSize;
     _cellData[gridName]![key] = existing;
     await _save();
   }

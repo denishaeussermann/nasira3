@@ -247,6 +247,7 @@ class _BriefScreenState extends State<BriefScreen> {
           shapeOverride:          cOv?['shape'] as String?,
           backgroundColorOverride: _hexToColor(cOv?['backgroundColor'] as String?),
           fontColorOverride:       _hexToColor(cOv?['fontColor']       as String?),
+          fontSizeOverride:        (cOv?['fontSize'] as num?)?.toDouble(),
         );
       }).toList();
 
@@ -454,7 +455,7 @@ class _BriefScreenState extends State<BriefScreen> {
       icon:            resolvedIcon,
       backgroundColor: cell.backgroundColor,
       textColor:       cell.foregroundColor,
-      fontSize:        cell.isFullyRounded ? 12 : 11,
+      fontSize:        cell.fontSizeOverride ?? (cell.isFullyRounded ? 12 : 11),
       borderRadius:    cell.isFullyRounded ? 100 : 7,
     );
 
@@ -676,7 +677,7 @@ class _BriefScreenState extends State<BriefScreen> {
       icon:            cell.iconData,
       backgroundColor: cell.backgroundColor,
       textColor:       cell.foregroundColor,
-      fontSize:        cell.isFullyRounded ? 12 : 11,
+      fontSize:        cell.fontSizeOverride ?? (cell.isFullyRounded ? 12 : 11),
       onTap:           onTap,
       onLongPress:     onLongPress,
       borderRadius:    cell.isFullyRounded ? 100 : 7,

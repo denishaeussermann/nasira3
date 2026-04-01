@@ -145,6 +145,9 @@ class GridCell {
   /// Optionale Textfarbe (überschreibt [style.foregroundColor]).
   final Color? fontColorOverride;
 
+  /// Optionale Schriftgröße in pt (überschreibt den Screen-Standard).
+  final double? fontSizeOverride;
+
   const GridCell({
     required this.x,
     required this.y,
@@ -162,6 +165,7 @@ class GridCell {
     this.shapeOverride,
     this.backgroundColorOverride,
     this.fontColorOverride,
+    this.fontSizeOverride,
   });
 
   Color get backgroundColor => backgroundColorOverride ?? style.backgroundColor;

@@ -110,6 +110,7 @@ class _FreiesSchreibenScreenState extends State<FreiesSchreibenScreen> {
         shapeOverride:           cOv?['shape'] as String?,
         backgroundColorOverride: _hexToColor(cOv?['backgroundColor'] as String?),
         fontColorOverride:       _hexToColor(cOv?['fontColor']       as String?),
+        fontSizeOverride:        (cOv?['fontSize'] as num?)?.toDouble(),
       );
     }).toList();
 

@@ -484,6 +484,9 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
   /// Textfarbe-Override (null = Originalfarbe).
   Color? _pendingFgColor;
 
+  /// Schriftgröße-Override in pt (null = Standardgröße des Screens).
+  double? _pendingFontSize;
+
   /// Suchergebnisse (Asset-Pfade).
   List<String> _searchResults = const [];
 
@@ -506,8 +509,9 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
     );
     _pendingStem    = existing?['symbolStem'] as String? ?? widget.cell.symbolStem;
     _pendingShape   = existing?['shape']     as String?;
-    _pendingBgColor = _hexToColor(existing?['backgroundColor'] as String?);
-    _pendingFgColor = _hexToColor(existing?['fontColor']       as String?);
+    _pendingBgColor  = _hexToColor(existing?['backgroundColor'] as String?);
+    _pendingFgColor  = _hexToColor(existing?['fontColor']       as String?);
+    _pendingFontSize = (existing?['fontSize'] as num?)?.toDouble();
     _searchCtrl = TextEditingController(text: _pendingStem ?? '');
 
     // Befehle laden: Override hat Vorrang, sonst alle XML-Befehle
@@ -582,6 +586,7 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
       fontColor:       _pendingFgColor != null
           ? _colorToHex(_pendingFgColor!)
           : '',
+      fontSize:        _pendingFontSize,
     );
     if (mounted) Navigator.pop(context, true);
   }
@@ -1052,6 +1057,54 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
                   _ColorSwatchPicker(
                     selected: _pendingFgColor,
                     onChanged: (c) => setState(() => _pendingFgColor = c),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ── Schriftgröße ─────────────────────────────────────────
+                  Row(
+                    children: [
+                      const Text('Schriftgröße',
+                          style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                      const Spacer(),
+                      Text(
+                        _pendingFontSize != null
+                            ? '${_pendingFontSize!.round()} pt'
+                            : 'Original',
+                        style: const TextStyle(
+                            color: Colors.white54, fontSize: 12),
+                      ),
+                      if (_pendingFontSize != null) ...[
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () =>
+                              setState(() => _pendingFontSize = null),
+                          child: const Icon(Icons.close,
+                              size: 14, color: Colors.white38),
+                        ),
+                      ],
+                    ],
+                  ),
+                  SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: NasiraColors.navGreen,
+                      thumbColor: NasiraColors.navGreen,
+                      inactiveTrackColor: Colors.white12,
+                      overlayColor:
+                          NasiraColors.navGreen.withValues(alpha: 0.2),
+                      trackHeight: 3,
+                    ),
+                    child: Slider(
+                      value: _pendingFontSize ?? 13,
+                      min: 8,
+                      max: 40,
+                      divisions: 32,
+                      onChanged: (v) =>
+                          setState(() => _pendingFontSize = v),
+                    ),
                   ),
 
                   const SizedBox(height: 24),
