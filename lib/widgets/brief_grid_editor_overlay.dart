@@ -445,22 +445,52 @@ const _kCommandLabels = <GridCommandType, String>{
   GridCommandType.speak:        'Vorlesen (TTS)',
 };
 
+// ── Mutable Segment (für insertText-Chip-Editor) ──────────────────────────────
+
+class _Segment {
+  String type;  // 'text' | 'symbol'
+  String value; // Textinhalt oder Symbol-Stem
+
+  _Segment.text(this.value) : type = 'text';
+  _Segment.symbol(this.value) : type = 'symbol';
+}
+
+// ── Mutable Befehlseintrag ────────────────────────────────────────────────────
+
 /// Hält den veränderbaren Zustand eines einzelnen Befehls im Editor.
 class _CmdEntry {
   GridCommandType? type;
   final TextEditingController paramCtrl;
+  /// Nur für insertText: strukturierte Segmente (Text + konkrete Symbole).
+  final List<_Segment> segments;
 
-  _CmdEntry(this.type, String param)
-      : paramCtrl = TextEditingController(text: param);
+  _CmdEntry(this.type, String param, [List<_Segment>? segs])
+      : paramCtrl = TextEditingController(text: param),
+        segments  = segs ?? [];
 
   /// Wandelt in JSON-Map um (für Override-Service).
   Map<String, dynamic> toJson() {
     if (type == null) return {};
     final m = <String, dynamic>{'type': type!.name};
     final p = paramCtrl.text;
-    if (type == GridCommandType.insertText)  { m['insertText']  = p; }
-    else if (type == GridCommandType.jumpTo) { m['jumpTarget']  = p.trim(); }
-    else if (type == GridCommandType.punctuation) {
+    if (type == GridCommandType.insertText) {
+      if (segments.isNotEmpty) {
+        // Segment-Modus: strukturierte Liste + Plaintext-Fallback für AAC-Ausführung
+        m['segments'] = segments.map((s) => {
+          'type': s.type,
+          if (s.type == 'text')   'value': s.value,
+          if (s.type == 'symbol') 'stem':  s.value,
+        }).toList();
+        m['insertText'] = segments
+            .where((s) => s.type == 'text')
+            .map((s) => s.value)
+            .join('');
+      } else {
+        m['insertText'] = p;
+      }
+    } else if (type == GridCommandType.jumpTo) {
+      m['jumpTarget'] = p.trim();
+    } else if (type == GridCommandType.punctuation) {
       m['punctuation'] = p.isNotEmpty ? p[0] : '.';
     }
     return m;
@@ -525,12 +555,41 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
           orElse: () => GridCommandType.other,
         );
         final param = (m['insertText'] ?? m['jumpTarget'] ?? m['punctuation'] ?? '') as String;
-        return _CmdEntry(type, param);
+        // Segmente für insertText-Befehle laden (oder Legacy-Text als ein Segment)
+        List<_Segment>? segs;
+        if (type == GridCommandType.insertText) {
+          final rawSegs = m['segments'] as List?;
+          if (rawSegs != null && rawSegs.isNotEmpty) {
+            segs = rawSegs.map((s) {
+              final sm = s as Map<String, dynamic>;
+              return sm['type'] == 'symbol'
+                  ? _Segment.symbol(sm['stem'] as String? ?? '')
+                  : _Segment.text(sm['value'] as String? ?? '');
+            }).toList();
+          } else if (param.isNotEmpty) {
+            segs = [_Segment.text(param)];
+          } else {
+            segs = [];
+          }
+        }
+        return _CmdEntry(type, param, segs);
       }).toList();
     } else {
       _commands = widget.cell.commands.map((cmd) {
         final param = cmd.insertText ?? cmd.jumpTarget ?? cmd.punctuation ?? '';
-        return _CmdEntry(cmd.type, param);
+        List<_Segment>? segs;
+        if (cmd.type == GridCommandType.insertText) {
+          if (cmd.segments != null && cmd.segments!.isNotEmpty) {
+            segs = cmd.segments!.map((s) => s.type == 'symbol'
+                ? _Segment.symbol(s.stem ?? '')
+                : _Segment.text(s.text ?? '')).toList();
+          } else if (param.isNotEmpty) {
+            segs = [_Segment.text(param)];
+          } else {
+            segs = [];
+          }
+        }
+        return _CmdEntry(cmd.type, param, segs);
       }).toList();
     }
   }
@@ -622,9 +681,6 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
 
   Widget _buildCommandRow(int index) {
     final entry = _commands[index];
-    final needsParam = entry.type == GridCommandType.insertText ||
-        entry.type == GridCommandType.jumpTo ||
-        entry.type == GridCommandType.punctuation;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -707,19 +763,25 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
             ],
           ),
           // Parameter-Feld (typ-abhängig)
-          if (needsParam) ...[
+          if (entry.type == GridCommandType.insertText) ...[
+            const SizedBox(height: 8),
+            _SegmentChipEditor(
+              segments:      entry.segments,
+              assetResolver: widget.assetResolver,
+              onChanged:     () => setState(() {}),
+            ),
+          ] else if (entry.type == GridCommandType.jumpTo ||
+                     entry.type == GridCommandType.punctuation) ...[
             const SizedBox(height: 6),
             TextField(
               controller: entry.paramCtrl,
               style: const TextStyle(color: Colors.white, fontSize: 13),
-              maxLines: entry.type == GridCommandType.insertText ? 2 : 1,
-              maxLength: entry.type == GridCommandType.punctuation ? 1 : null,
+              maxLines:   1,
+              maxLength:  entry.type == GridCommandType.punctuation ? 1 : null,
               decoration: _inputDeco(
-                entry.type == GridCommandType.insertText
-                    ? 'Text …'
-                    : entry.type == GridCommandType.jumpTo
-                        ? 'Zielseiten-Name (exakt)'
-                        : 'Zeichen (. , ? ! …)',
+                entry.type == GridCommandType.jumpTo
+                    ? 'Zielseiten-Name (exakt)'
+                    : 'Zeichen (. , ? ! …)',
               ),
             ),
           ],
@@ -1524,6 +1586,452 @@ class _ColorSwatchPicker extends StatelessWidget {
           ),
         );
       }).toList(),
+    );
+  }
+}
+
+// ── InsertText Segment-Chip-Editor ────────────────────────────────────────────
+
+/// Zeigt InsertText-Inhalte als horizontale Chip-Leiste aus Text- und Symbol-
+/// Segmenten. Jedes Symbol-Segment referenziert einen eindeutigen Stem (Datei-
+/// name ohne Endung). Beim Antippen eines Symbol-Chips öffnet sich eine
+/// Inline-Suche direkt im Editor-Sheet.
+class _SegmentChipEditor extends StatefulWidget {
+  final List<_Segment> segments;
+  final dynamic assetResolver;
+  final VoidCallback onChanged;
+
+  const _SegmentChipEditor({
+    required this.segments,
+    required this.assetResolver,
+    required this.onChanged,
+  });
+
+  @override
+  State<_SegmentChipEditor> createState() => _SegmentChipEditorState();
+}
+
+class _SegmentChipEditorState extends State<_SegmentChipEditor> {
+  // Index des gerade inline bearbeiteten Text-Segments (-1 = keines)
+  int _textEditIndex = -1;
+  TextEditingController? _textCtrl;
+
+  // Index des Symbol-Segments, für das gerade gesucht wird (-1 = keines)
+  int _symbolSearchIndex = -1;
+  final _searchCtrl = TextEditingController();
+  List<String> _searchResults = [];
+
+  @override
+  void dispose() {
+    _textCtrl?.dispose();
+    _searchCtrl.dispose();
+    super.dispose();
+  }
+
+  // ── Text-Segment bearbeiten ────────────────────────────────────────────────
+
+  void _startTextEdit(int index) {
+    _textCtrl?.dispose();
+    _textCtrl = TextEditingController(text: widget.segments[index].value)
+      ..selection = TextSelection(
+        baseOffset: 0,
+        extentOffset: widget.segments[index].value.length,
+      );
+    setState(() {
+      _textEditIndex     = index;
+      _symbolSearchIndex = -1;
+      _searchResults     = [];
+    });
+  }
+
+  void _commitTextEdit() {
+    if (_textEditIndex < 0) return;
+    final newText = _textCtrl?.text ?? '';
+    if (newText.isEmpty) {
+      widget.segments.removeAt(_textEditIndex);
+    } else {
+      widget.segments[_textEditIndex].value = newText;
+    }
+    _textCtrl?.dispose();
+    _textCtrl = null;
+    setState(() => _textEditIndex = -1);
+    widget.onChanged();
+  }
+
+  // ── Symbol-Segment suchen ──────────────────────────────────────────────────
+
+  void _startSymbolSearch(int index) {
+    setState(() {
+      _symbolSearchIndex = index;
+      _textEditIndex     = -1;
+      _searchCtrl.clear();
+      _searchResults     = [];
+    });
+  }
+
+  void _runSymbolSearch(String query) {
+    if (query.isEmpty) {
+      setState(() => _searchResults = []);
+      return;
+    }
+    final results =
+        widget.assetResolver.search(query, limit: 24) as List<String>;
+    setState(() => _searchResults = results);
+  }
+
+  void _pickSymbol(String assetPath) {
+    final base = assetPath.split('/').last;
+    final dot  = base.lastIndexOf('.');
+    final stem = dot >= 0 ? base.substring(0, dot) : base;
+    widget.segments[_symbolSearchIndex].value = stem;
+    setState(() {
+      _symbolSearchIndex = -1;
+      _searchCtrl.clear();
+      _searchResults     = [];
+    });
+    widget.onChanged();
+  }
+
+  void _cancelSymbolSearch() {
+    // Leeres Symbol-Segment entfernen
+    if (_symbolSearchIndex >= 0 &&
+        _symbolSearchIndex < widget.segments.length &&
+        widget.segments[_symbolSearchIndex].value.isEmpty) {
+      widget.segments.removeAt(_symbolSearchIndex);
+      widget.onChanged();
+    }
+    setState(() {
+      _symbolSearchIndex = -1;
+      _searchCtrl.clear();
+      _searchResults     = [];
+    });
+  }
+
+  // ── Segment entfernen ──────────────────────────────────────────────────────
+
+  void _removeSegment(int index) {
+    widget.segments.removeAt(index);
+    if (_textEditIndex == index) {
+      _textCtrl?.dispose();
+      _textCtrl      = null;
+      _textEditIndex = -1;
+    } else if (_textEditIndex > index) {
+      _textEditIndex--;
+    }
+    if (_symbolSearchIndex == index) {
+      _symbolSearchIndex = -1;
+      _searchCtrl.clear();
+      _searchResults = [];
+    } else if (_symbolSearchIndex > index) {
+      _symbolSearchIndex--;
+    }
+    setState(() {});
+    widget.onChanged();
+  }
+
+  // ── Segment hinzufügen ─────────────────────────────────────────────────────
+
+  void _addText() {
+    widget.segments.add(_Segment.text(''));
+    _startTextEdit(widget.segments.length - 1);
+    widget.onChanged();
+  }
+
+  void _addSymbol() {
+    widget.segments.add(_Segment.symbol(''));
+    _startSymbolSearch(widget.segments.length - 1);
+  }
+
+  // ── Build ──────────────────────────────────────────────────────────────────
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Chip-Zeile
+        Wrap(
+          spacing: 6,
+          runSpacing: 6,
+          children: [
+            for (int i = 0; i < widget.segments.length; i++) _buildChip(i),
+            _buildAddButton(),
+          ],
+        ),
+
+        // Inline Symbol-Suche
+        if (_symbolSearchIndex >= 0) ...[
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _searchCtrl,
+                  autofocus: true,
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  decoration: InputDecoration(
+                    filled: true,
+                    fillColor: const Color(0xFF2A3E2A),
+                    hintText: 'Symbol suchen …',
+                    hintStyle:
+                        const TextStyle(color: Colors.white38, fontSize: 12),
+                    prefixIcon: const Icon(Icons.search,
+                        color: Colors.white38, size: 16),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      borderSide: BorderSide.none,
+                    ),
+                    contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 10, vertical: 8),
+                  ),
+                  onChanged: _runSymbolSearch,
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.close, color: Colors.white38, size: 18),
+                onPressed: _cancelSymbolSearch,
+                tooltip: 'Suche abbrechen',
+              ),
+            ],
+          ),
+          if (_searchResults.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              gridDelegate:
+                  const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 5,
+                crossAxisSpacing: 5,
+                mainAxisSpacing: 5,
+                childAspectRatio: 1,
+              ),
+              itemCount: _searchResults.length,
+              itemBuilder: (ctx, i) {
+                final path = _searchResults[i];
+                final base = path.split('/').last;
+                final dot  = base.lastIndexOf('.');
+                final stem = dot >= 0 ? base.substring(0, dot) : base;
+                return GestureDetector(
+                  onTap: () => _pickSymbol(path),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF2A3E2A),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Column(
+                      children: [
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.all(3),
+                            child: Image.asset(path,
+                                fit: BoxFit.contain,
+                                errorBuilder: (_, __, ___) => const Icon(
+                                    Icons.broken_image_outlined,
+                                    color: Colors.white24,
+                                    size: 18)),
+                          ),
+                        ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(2, 0, 2, 3),
+                          child: Text(stem,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                  color: Colors.white38, fontSize: 7.5)),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ] else if (_searchCtrl.text.isNotEmpty)
+            const Padding(
+              padding: EdgeInsets.only(top: 4),
+              child: Text('Keine Ergebnisse',
+                  style: TextStyle(color: Colors.white38, fontSize: 11)),
+            ),
+        ],
+      ],
+    );
+  }
+
+  // ── Einzelner Chip ─────────────────────────────────────────────────────────
+
+  Widget _buildChip(int index) {
+    final seg = widget.segments[index];
+
+    if (seg.type == 'text') {
+      // ── Text-Chip ──────────────────────────────────────────────────────────
+      if (_textEditIndex == index) {
+        return Container(
+          width: 150,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2A3E2A),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: NasiraColors.navGreen, width: 1.5),
+          ),
+          child: TextField(
+            controller: _textCtrl,
+            autofocus: true,
+            style: const TextStyle(color: Colors.white, fontSize: 12),
+            decoration: const InputDecoration(
+              isDense: true,
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.zero,
+            ),
+            onSubmitted: (_) => setState(_commitTextEdit),
+          ),
+        );
+      }
+      return GestureDetector(
+        onTap: () => _startTextEdit(index),
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 180),
+          padding: const EdgeInsets.fromLTRB(6, 5, 4, 5),
+          decoration: BoxDecoration(
+            color: const Color(0xFF2A3E2A),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.text_fields, size: 11, color: Colors.white38),
+              const SizedBox(width: 4),
+              Flexible(
+                child: Text(
+                  seg.value.isEmpty ? '(leer)' : seg.value,
+                  style: TextStyle(
+                    color: seg.value.isEmpty ? Colors.white38 : Colors.white,
+                    fontSize: 12,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: () => _removeSegment(index),
+                child:
+                    const Icon(Icons.close, size: 12, color: Colors.red),
+              ),
+            ],
+          ),
+        ),
+      );
+    } else {
+      // ── Symbol-Chip ────────────────────────────────────────────────────────
+      final stem = seg.value;
+      final path = stem.isNotEmpty
+          ? widget.assetResolver.resolve('$stem.jpg') as String?
+          : null;
+      final isSearching = _symbolSearchIndex == index;
+
+      return GestureDetector(
+        onTap: () => _startSymbolSearch(index),
+        child: Container(
+          padding: const EdgeInsets.fromLTRB(6, 4, 4, 4),
+          decoration: BoxDecoration(
+            color: isSearching
+                ? NasiraColors.navGreen.withValues(alpha: 0.15)
+                : const Color(0xFF1E3A3A),
+            borderRadius: BorderRadius.circular(6),
+            border: Border.all(
+              color: isSearching
+                  ? NasiraColors.navGreen
+                  : const Color(0xFF3A5A5A),
+              width: isSearching ? 1.5 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 24,
+                height: 24,
+                child: path != null
+                    ? Image.asset(path,
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Icon(
+                            Icons.broken_image_outlined,
+                            size: 16,
+                            color: Colors.white38))
+                    : const Icon(Icons.image_search,
+                        size: 16, color: Colors.white38),
+              ),
+              const SizedBox(width: 4),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 90),
+                child: Text(
+                  stem.isEmpty ? 'Symbol…' : stem,
+                  style: TextStyle(
+                    color: stem.isEmpty ? Colors.white38 : Colors.white70,
+                    fontSize: 11,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 4),
+              GestureDetector(
+                onTap: () => _removeSegment(index),
+                child:
+                    const Icon(Icons.close, size: 12, color: Colors.red),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+  }
+
+  // ── Hinzufügen-Button ──────────────────────────────────────────────────────
+
+  Widget _buildAddButton() {
+    return PopupMenuButton<String>(
+      onSelected: (val) {
+        if (val == 'text') _addText();
+        if (val == 'symbol') _addSymbol();
+      },
+      color: const Color(0xFF253525),
+      itemBuilder: (_) => const [
+        PopupMenuItem(
+          value: 'text',
+          child: Row(children: [
+            Icon(Icons.text_fields, size: 15, color: Colors.white70),
+            SizedBox(width: 8),
+            Text('Text', style: TextStyle(color: Colors.white, fontSize: 13)),
+          ]),
+        ),
+        PopupMenuItem(
+          value: 'symbol',
+          child: Row(children: [
+            Icon(Icons.image_outlined, size: 15, color: Colors.white70),
+            SizedBox(width: 8),
+            Text('Symbol', style: TextStyle(color: Colors.white, fontSize: 13)),
+          ]),
+        ),
+      ],
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: NasiraColors.navGreen.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+              color: NasiraColors.navGreen.withValues(alpha: 0.4)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.add, size: 13, color: NasiraColors.navGreen),
+            SizedBox(width: 4),
+            Text('Hinzufügen',
+                style: TextStyle(
+                    color: NasiraColors.navGreen, fontSize: 12)),
+          ],
+        ),
+      ),
     );
   }
 }

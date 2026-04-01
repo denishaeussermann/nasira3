@@ -73,6 +73,38 @@ extension GridCellStyleColors on GridCellStyle {
       this == GridCellStyle.hauptthema || this == GridCellStyle.unterthema;
 }
 
+// ── InsertText-Segmente ───────────────────────────────────────────────────────
+
+/// Ein Segment eines InsertText-Befehls: entweder reiner Text oder ein
+/// eindeutig referenziertes Symbol (über den Datei-Stem).
+class InsertSegment {
+  /// 'text' oder 'symbol'.
+  final String type;
+  /// Für type='text': der eingefügte Textinhalt.
+  final String? text;
+  /// Für type='symbol': eindeutiger Symbol-Stem (Dateiname ohne Endung).
+  final String? stem;
+
+  const InsertSegment({required this.type, this.text, this.stem});
+
+  factory InsertSegment.fromText(String value) =>
+      InsertSegment(type: 'text', text: value);
+  factory InsertSegment.fromSymbol(String stem) =>
+      InsertSegment(type: 'symbol', stem: stem);
+
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        if (type == 'text')   'value': text,
+        if (type == 'symbol') 'stem':  stem,
+      };
+
+  factory InsertSegment.fromJson(Map<String, dynamic> m) => InsertSegment(
+        type: m['type'] as String? ?? 'text',
+        text: m['value'] as String?,
+        stem: m['stem']  as String?,
+      );
+}
+
 // ── Befehle ───────────────────────────────────────────────────────────────────
 
 enum GridCommandType {
@@ -95,15 +127,20 @@ enum GridCommandType {
 
 class GridCellCommand {
   final GridCommandType type;
-  final String? insertText;  // für insertText
+  final String? insertText;  // für insertText (Klartext, ggf. aus segments generiert)
   final String? jumpTarget;  // für jumpTo (Grid-Name)
   final String? punctuation; // für punctuation (".", "?", "!")
+  /// Strukturierte Segmente (Text + eindeutige Symbol-Referenzen).
+  /// null = klassischer Plaintext-Modus; nicht-null = Chip-Modus.
+  /// [insertText] bleibt stets als AAC-Ausführungs-Fallback erhalten.
+  final List<InsertSegment>? segments;
 
   const GridCellCommand({
     required this.type,
     this.insertText,
     this.jumpTarget,
     this.punctuation,
+    this.segments,
   });
 
   @override

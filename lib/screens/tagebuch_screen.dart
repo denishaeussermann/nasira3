@@ -189,11 +189,15 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
         (t) => t.name == (m['type'] as String? ?? ''),
         orElse: () => GridCommandType.other,
       );
+      final rawSegs = m['segments'] as List?;
+      final segs = rawSegs?.map((s) =>
+          InsertSegment.fromJson(s as Map<String, dynamic>)).toList();
       return GridCellCommand(
         type:        type,
         insertText:  m['insertText']  as String?,
         jumpTarget:  m['jumpTarget']  as String?,
         punctuation: m['punctuation'] as String?,
+        segments:    segs,
       );
     }).toList();
   }

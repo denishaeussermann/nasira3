@@ -73,7 +73,9 @@
 **Status: ERLEDIGT**
 **Notizen:** GridOverrideService: _userGridMeta (JSON-Schlüssel _userGridMeta), createUserGrid/deleteUserGrid/listUserGrids/buildUserGridPage; UserGridsScreen (Liste + FAB + Lösch-Dialog); _UserGridEditorPage (GridLayoutEditor ohne XML-Rohseite); _NewGridDialog mit _Counter (Spalten/Zeilen); Startseite: „Meine Grids"-Kachel (navGreen, ersetzt Raster).
 
-### ☐ 22 — InsertText mit eingebettetem Symbol (Rich Text)
+### ✅ 22 — InsertText mit eingebettetem Symbol (Segment-Chip-Editor)
+**Status: ERLEDIGT**
+**Notizen:** InsertSegment-Klasse in grid_page.dart (type 'text'|'symbol', stem als eindeutige Symbolreferenz); GridCellCommand.segments optional; _Segment mutable + _CmdEntry.segments in brief_grid_editor_overlay.dart; _SegmentChipEditor: Chip-Leiste mit Text-/Symbol-Chips, Inline-Symbolsuche, PopupMenu zum Hinzufügen; toJson() generiert segments-Array + insertText-Plaintext-Fallback für AAC-Ausführung; alle drei Screens: _parseCommandOverrides parst segments.
 
 ---
 
