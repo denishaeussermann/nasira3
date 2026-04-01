@@ -4,6 +4,7 @@ import '../models/grid_page.dart';
 import '../services/grid_override_service.dart';
 import '../theme/nasira_colors.dart';
 import 'brief_grid_editor_overlay.dart';
+import 'grid_page_editor_sheet.dart';
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
 
@@ -708,6 +709,20 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
               overflow: TextOverflow.ellipsis,
             ),
           ),
+          // Wortliste-Button — nur wenn die Seite AutoContent-Zellen hat
+          if (widget.page.cells.any(
+              (c) => c.type == GridCellType.autoContent))
+            IconButton(
+              icon: const Icon(Icons.list_alt_outlined,
+                  color: Colors.white, size: 20),
+              tooltip: 'Wortliste bearbeiten',
+              onPressed: () => GridPageEditorSheet.show(
+                context: context,
+                page: widget.page,
+                overrideService: widget.overrideService,
+                onSaved: widget.onChanged,
+              ),
+            ),
           if (_hasChanges && !_saving)
             TextButton(
               onPressed: _confirmReset,

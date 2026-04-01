@@ -51,9 +51,9 @@
 
 ## RUNDE 2 — Wichtig für echten Workflow
 
-### ☐ 17 — WordList-Editor
-**Status: OFFEN**
-**Was:** Wortlisten-Einträge hinzufügen / entfernen / umsortieren (Text + Symbol)
+### ✅ 17 — WordList-Editor
+**Status: ERLEDIGT**
+**Notizen:** GridPageEditorSheet mit Symbol-Suche (_WordListItemDialog); Wortliste-Button (list_alt) in GridLayoutEditor-Toolbar, nur sichtbar wenn AutoContent-Zellen vorhanden.
 
 ### ☐ 16 — Zelle kopieren / einfügen
 **Status: OFFEN**
