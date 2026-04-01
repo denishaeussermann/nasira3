@@ -42,10 +42,9 @@
 **Status: ERLEDIGT**
 **Notizen:** Slider 8–40pt im Sheet, fontSizeOverride in GridCell, Screens nutzen fontSizeOverride ?? Standardgröße.
 
-### ☐ 14 — Style-System (Named Styles)
-**Status: OFFEN**
-**Dateien:** neues `lib/services/grid_style_service.dart`, `brief_grid_editor_overlay.dart`
-**Was:** 54 Styles aus styles.xml parsen → Dropdown im Cell-Editor → setzt backgroundColor + fontColor + shape en bloc
+### ✅ 14 — Style-System (Named Styles)
+**Status: ERLEDIGT**
+**Notizen:** GridStyleService (28 hardcodierte Styles aus styles.xml), _NamedStylePicker als horizontale Chip-Leiste im Cell-Editor; Antippen setzt backgroundColor + fontColor + shape en bloc.
 
 ---
 
