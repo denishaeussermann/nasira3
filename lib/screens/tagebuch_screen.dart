@@ -10,6 +10,7 @@ import '../theme/nasira_colors.dart';
 import '../widgets/grid_layout_editor.dart';
 import '../widgets/nasira_grid_cell.dart';
 import '../widgets/nasira_text_workspace.dart';
+import '../widgets/nasira_title_bar.dart';
 
 // ── Hilfsfunktion: Hauptwort für Symbol-Lookup ────────────────────────────────
 
@@ -221,9 +222,9 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
     final state = context.watch<NasiraAppState>();
     final page  = _pages[_currentPageName];
 
-    // ── Editor-Modus ─────────────────────────────────────────────────────────
+    // AutoContent-Map für Editor-Vorschau vorbereiten
+    Map<String, GridWordListItem> autoMap = {};
     if (_editorOpen && page != null) {
-      Map<String, GridWordListItem> autoMap = {};
       final autoSlots = page.cells
           .where((c) => c.type == GridCellType.autoContent)
           .toList()
@@ -231,38 +232,45 @@ class _TagebuchScreenState extends State<TagebuchScreen> {
       for (int i = 0; i < autoSlots.length && i < page.wordList.length; i++) {
         autoMap['${autoSlots[i].x},${autoSlots[i].y}'] = page.wordList[i];
       }
-
-      return Scaffold(
-        backgroundColor: NasiraColors.briefBg,
-        body: SafeArea(
-          child: GridLayoutEditor(
-            page:            page,
-            rawPage:         _rawPages[_currentPageName],
-            pageName:        _currentPageName,
-            pageColor:       page.backgroundColor,
-            overrideService: _overrideService,
-            cellBuilder: (cell) {
-              final wlItem = autoMap['${cell.x},${cell.y}'];
-              if (wlItem != null) return _buildWordItem(state, wlItem);
-              return _buildCellForEditor(state, cell);
-            },
-            onDismiss: () => setState(() => _editorOpen = false),
-            onChanged: () => setState(() {
-              _refreshAllPages();
-              _wlPage = 0;
-            }),
-          ),
-        ),
-      );
     }
 
-    // ── Normal-Modus ─────────────────────────────────────────────────────────
     return Scaffold(
       backgroundColor: NasiraColors.briefBg,
       body: SafeArea(
-        child: page != null
-            ? _buildExactGrid(state, page)
-            : const Center(child: CircularProgressIndicator()),
+        child: Column(
+          children: [
+            // ── Titelleiste mit Hamburger ───────────────────────────────
+            NasiraTitleBar(
+              onMenuTap: (!_editorOpen && page != null)
+                  ? () => setState(() => _editorOpen = true)
+                  : null,
+            ),
+            // ── Inhalt ─────────────────────────────────────────────────
+            Expanded(
+              child: _editorOpen && page != null
+                  ? GridLayoutEditor(
+                      page:            page,
+                      rawPage:         _rawPages[_currentPageName],
+                      pageName:        _currentPageName,
+                      pageColor:       page.backgroundColor,
+                      overrideService: _overrideService,
+                      cellBuilder: (cell) {
+                        final wlItem = autoMap['${cell.x},${cell.y}'];
+                        if (wlItem != null) return _buildWordItem(state, wlItem);
+                        return _buildCellForEditor(state, cell);
+                      },
+                      onDismiss: () => setState(() => _editorOpen = false),
+                      onChanged: () => setState(() {
+                        _refreshAllPages();
+                        _wlPage = 0;
+                      }),
+                    )
+                  : (page != null
+                      ? _buildExactGrid(state, page)
+                      : const Center(child: CircularProgressIndicator())),
+            ),
+          ],
+        ),
       ),
     );
   }

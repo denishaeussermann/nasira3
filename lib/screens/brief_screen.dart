@@ -10,6 +10,7 @@ import '../theme/nasira_colors.dart';
 import '../widgets/grid_layout_editor.dart';
 import '../widgets/nasira_grid_cell.dart';
 import '../widgets/nasira_text_workspace.dart';
+import '../widgets/nasira_title_bar.dart';
 import 'freies_schreiben_screen.dart';
 
 // ── Hilfsfunktion: Hauptwort für Symbol-Lookup ────────────────────────────────
@@ -353,28 +354,38 @@ class _BriefScreenState extends State<BriefScreen> {
     return Scaffold(
       backgroundColor: NasiraColors.briefBg,
       body: SafeArea(
-        child: _editorOpen && page != null && gridName != null
-            // ── WYSIWYG Layout-Editor (ersetzt Seiten-Inhalt direkt) ────
-            ? GridLayoutEditor(
-                page:      page,
-                rawPage:   _rawPages[_schritt],
-                pageName:  gridName,
-                pageColor: page.backgroundColor,
-                overrideService: _overrideService,
-                cellBuilder: (cell) {
-                  // AutoContent → echtes WL-Item anzeigen
-                  final wlItem = autoMap['${cell.x},${cell.y}'];
-                  if (wlItem != null) return _buildWordItem(state, wlItem);
-                  return _buildCellForEditor(state, cell);
-                },
-                onDismiss: () => setState(() => _editorOpen = false),
-                onChanged: () => setState(() {
-                  _applyOverrides();
-                  _wlPage = 0;
-                }),
-              )
-            // ── Normal-Modus ─────────────────────────────────────────────
-            : _buildStepContent(state),
+        child: Column(
+          children: [
+            // ── Titelleiste mit Hamburger ─────────────────────────────────
+            NasiraTitleBar(
+              onMenuTap: _editorOpen ? null : _currentOnEdit(),
+            ),
+            // ── Inhalt ────────────────────────────────────────────────────
+            Expanded(
+              child: _editorOpen && page != null && gridName != null
+                  // ── WYSIWYG Layout-Editor ──────────────────────────────
+                  ? GridLayoutEditor(
+                      page:      page,
+                      rawPage:   _rawPages[_schritt],
+                      pageName:  gridName,
+                      pageColor: page.backgroundColor,
+                      overrideService: _overrideService,
+                      cellBuilder: (cell) {
+                        final wlItem = autoMap['${cell.x},${cell.y}'];
+                        if (wlItem != null) return _buildWordItem(state, wlItem);
+                        return _buildCellForEditor(state, cell);
+                      },
+                      onDismiss: () => setState(() => _editorOpen = false),
+                      onChanged: () => setState(() {
+                        _applyOverrides();
+                        _wlPage = 0;
+                      }),
+                    )
+                  // ── Normal-Modus ───────────────────────────────────────
+                  : _buildStepContent(state),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -427,8 +438,6 @@ class _BriefScreenState extends State<BriefScreen> {
     final page     = _pages[schritt];
     final leitfrage = _leitfragen[schritt] ?? '';
 
-    final VoidCallback? onEdit = _currentOnEdit();
-
     if (page == null) {
       return Column(children: [
         Expanded(
@@ -437,13 +446,13 @@ class _BriefScreenState extends State<BriefScreen> {
                 style: const TextStyle(color: Colors.grey, fontSize: 14)),
           ),
         ),
-        _buildLeitfragenStrip(state, [leitfrage], onEdit: onEdit),
+        _buildLeitfragenStrip(state, [leitfrage]),
       ]);
     }
 
     return Column(children: [
       Expanded(child: _buildExactGrid(state, page, schritt)),
-      _buildLeitfragenStrip(state, [leitfrage], onEdit: onEdit),
+      _buildLeitfragenStrip(state, [leitfrage]),
     ]);
   }
 
@@ -452,15 +461,40 @@ class _BriefScreenState extends State<BriefScreen> {
   Widget _buildExactGrid(NasiraAppState state, GridPage page, _BriefSchritt schritt) {
     if (page.rows <= 0) return const SizedBox.shrink();
 
-    // Für Einleitung: eigene Sätze vor die XML-Wortliste stellen.
-    final wordList = schritt == _BriefSchritt.einleitung
-        ? [
-            ...state.customSentences
-                .forModule('brief')
-                .map((s) => GridWordListItem(text: s.sentence)),
-            ...page.wordList,
-          ]
-        : page.wordList;
+    // Wortliste je Schritt anpassen.
+    final wordList = switch (schritt) {
+      // Einleitung: eigene Sätze vorschalten
+      _BriefSchritt.einleitung => [
+          ...state.customSentences
+              .forModule('brief')
+              .map((s) => GridWordListItem(text: s.sentence)),
+          ...page.wordList,
+        ],
+      // Begrüßung: Hallo / Liebe / Lieber garantiert sichtbar
+      _BriefSchritt.begruessung => page.wordList.isNotEmpty
+          ? page.wordList
+          : const [
+              GridWordListItem(
+                text: 'Hallo',
+                symbolStem: 'hallo2',
+                symbolCategory: 'konversation_interaktion',
+                metacmPath: 'konversation_interaktion/hallo2',
+              ),
+              GridWordListItem(
+                text: 'Liebe',
+                symbolStem: 'freundin',
+                symbolCategory: 'liebe_sexualitaet',
+                metacmPath: 'liebe_sexualitaet/freundin',
+              ),
+              GridWordListItem(
+                text: 'Lieber',
+                symbolStem: 'freund',
+                symbolCategory: 'liebe_sexualitaet',
+                metacmPath: 'liebe_sexualitaet/freund',
+              ),
+            ],
+      _ => page.wordList,
+    };
 
     final workspaceCells = page.cells
         .where((c) => c.type == GridCellType.workspace)
@@ -663,9 +697,8 @@ class _BriefScreenState extends State<BriefScreen> {
 
   Widget _buildLeitfragenStrip(
     NasiraAppState state,
-    List<String> fragen, {
-    VoidCallback? onEdit,
-  }) {
+    List<String> fragen,
+  ) {
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
       child: SizedBox(
@@ -679,24 +712,6 @@ class _BriefScreenState extends State<BriefScreen> {
                   caption: fragen[i],
                   backgroundColor: NasiraColors.briefQuestion,
                   fontSize: 11,
-                ),
-              ),
-            ],
-            if (onEdit != null) ...[
-              const SizedBox(width: 6),
-              SizedBox(
-                width: 44,
-                child: Material(
-                  color: NasiraColors.navGreen,
-                  borderRadius: BorderRadius.circular(8),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(8),
-                    onTap: onEdit,
-                    child: const Center(
-                      child: Icon(Icons.edit_outlined,
-                          color: Colors.white, size: 22),
-                    ),
-                  ),
                 ),
               ),
             ],

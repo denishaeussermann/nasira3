@@ -10,6 +10,7 @@ import '../theme/nasira_colors.dart';
 import '../widgets/grid_layout_editor.dart';
 import '../widgets/nasira_grid_cell.dart';
 import '../widgets/nasira_text_workspace.dart';
+import '../widgets/nasira_title_bar.dart';
 import 'freies_schreiben_screen.dart';
 
 /// Stabiler Schlüssel für GridOverrideService-Einträge.
@@ -341,40 +342,46 @@ class _EinkaufenScreenState extends State<EinkaufenScreen> {
   Widget build(BuildContext context) {
     final state = context.watch<NasiraAppState>();
 
-    // ── Editor-Modus ────────────────────────────────────────────────────────
-    if (_editorOpen) {
-      // autoMap: Artikel-Slots → aktuelles Seiten-Item (für echte Vorschau)
-      final items = _pageItems;
-      return Scaffold(
-        backgroundColor: NasiraColors.briefBg,
-        body: SafeArea(
-          child: GridLayoutEditor(
-            page:     _effectivePage,
-            rawPage:  _buildCanonicalPage(),
-            pageName: _kEinkaufPageKey,
-            pageColor: const Color(0xFF1E2E1E),
-            overrideService: _overrideService,
-            cellBuilder: (cell) => _buildCellForEditor(state, cell, items),
-            onDismiss: () => setState(() => _editorOpen = false),
-            onChanged: () => setState(_applyOverrides),
-          ),
-        ),
-      );
-    }
+    final items = _pageItems;
 
-    // ── Normal-Modus ─────────────────────────────────────────────────────────
     return Scaffold(
       backgroundColor: NasiraColors.briefBg,
       body: SafeArea(
-        child: FutureBuilder<NasiraLoadResult>(
-          future: state.futureLoad,
-          builder: (ctx, snap) {
-            if (!snap.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-            _cachedData = snap.data!.data;
-            return _buildStackGrid(state);
-          },
+        child: Column(
+          children: [
+            // ── Titelleiste mit Hamburger ─────────────────────────────────
+            NasiraTitleBar(
+              onMenuTap: _editorOpen
+                  ? null
+                  : () => setState(() => _editorOpen = true),
+            ),
+            // ── Inhalt ────────────────────────────────────────────────────
+            Expanded(
+              child: _editorOpen
+                  ? GridLayoutEditor(
+                      page:     _effectivePage,
+                      rawPage:  _buildCanonicalPage(),
+                      pageName: _kEinkaufPageKey,
+                      pageColor: const Color(0xFF1E2E1E),
+                      overrideService: _overrideService,
+                      cellBuilder: (cell) =>
+                          _buildCellForEditor(state, cell, items),
+                      onDismiss: () => setState(() => _editorOpen = false),
+                      onChanged: () => setState(_applyOverrides),
+                    )
+                  : FutureBuilder<NasiraLoadResult>(
+                      future: state.futureLoad,
+                      builder: (ctx, snap) {
+                        if (!snap.hasData) {
+                          return const Center(
+                              child: CircularProgressIndicator());
+                        }
+                        _cachedData = snap.data!.data;
+                        return _buildStackGrid(state);
+                      },
+                    ),
+            ),
+          ],
         ),
       ),
     );

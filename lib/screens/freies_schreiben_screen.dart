@@ -4,9 +4,13 @@ import '../models/models.dart';
 import '../nasira_app_state.dart';
 import '../nasira_repository.dart';
 import '../services/grid_import_service.dart';
+import '../services/grid_override_service.dart';
 import '../theme/nasira_colors.dart';
 import '../widgets/composite_symbol.dart';
+import '../widgets/grid_layout_editor.dart';
+import '../widgets/nasira_grid_cell.dart';
 import '../widgets/nasira_text_workspace.dart';
+import '../widgets/nasira_title_bar.dart';
 
 // ── Freies Schreiben — Grid3-XML-getrieben ────────────────────────────────────
 //
@@ -32,15 +36,17 @@ class _FreiesSchreibenScreenState extends State<FreiesSchreibenScreen> {
   static const _mainGrid   = '1 Freies Schreiben Tastatur';
   static const _headerRows = 2; // Rows 0-1 in allen FS-Grids
 
-  final _importer = GridImportService();
+  final _importer       = GridImportService();
+  final _overrideService = GridOverrideService();
   final Map<String, GridPage> _grids   = {};
   final List<String>          _history = [];
   final FocusNode             _focus   = FocusNode();
 
-  String _current  = _mainGrid;
-  bool   _capsLock = false;
-  bool   _shift    = false;
-  int    _predPage = 0; // Vorhersage-Seite (0 = Slots 0-13)
+  String _current   = _mainGrid;
+  bool   _capsLock  = false;
+  bool   _shift     = false;
+  int    _predPage  = 0; // Vorhersage-Seite (0 = Slots 0-13)
+  bool   _editorOpen = false;
 
   GridPage? get _page => _grids[_current];
 
@@ -49,7 +55,9 @@ class _FreiesSchreibenScreenState extends State<FreiesSchreibenScreen> {
   @override
   void initState() {
     super.initState();
-    _loadGrid(_mainGrid);
+    _overrideService.load().then((_) {
+      if (mounted) _loadGrid(_mainGrid);
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) => _focus.requestFocus());
   }
 
@@ -59,12 +67,51 @@ class _FreiesSchreibenScreenState extends State<FreiesSchreibenScreen> {
     super.dispose();
   }
 
-  // ── Grid-Laden ─────────────────────────────────────────────────────────────
+  // ── Grid-Laden (mit Override-Anwendung) ────────────────────────────────────
 
   Future<void> _loadGrid(String name) async {
     if (_grids.containsKey(name)) return;
-    final page = await _importer.importPage(name);
-    if (page != null && mounted) setState(() => _grids[name] = page);
+    final raw = await _importer.importPage(name);
+    if (raw != null && mounted) {
+      setState(() => _grids[name] = _applyOverride(name, raw));
+    }
+  }
+
+  /// Wendet gespeicherte Layout-Overrides auf eine GridPage an.
+  GridPage _applyOverride(String name, GridPage raw) {
+    final layoutOv = _overrideService.getLayoutOverrides(name);
+    final sizeOv   = _overrideService.getGridSize(name);
+    if (layoutOv == null && sizeOv == null) return raw;
+
+    final cells = raw.cells.map((c) {
+      final lOv = layoutOv?['${c.x},${c.y}'];
+      if (lOv == null) return c;
+      return GridCell(
+        x:       lOv['x']       ?? c.x,
+        y:       lOv['y']       ?? c.y,
+        colSpan: lOv['colSpan'] ?? c.colSpan,
+        rowSpan: lOv['rowSpan'] ?? c.rowSpan,
+        caption: c.caption, metacmPath: c.metacmPath,
+        symbolStem: c.symbolStem, symbolCategory: c.symbolCategory,
+        localImagePath: c.localImagePath, iconData: c.iconData,
+        style: c.style, type: c.type, commands: c.commands,
+      );
+    }).toList();
+
+    return GridPage(
+      name:            raw.name,
+      columns:         sizeOv?['columns'] ?? raw.columns,
+      rows:            sizeOv?['rows']    ?? raw.rows,
+      backgroundColor: raw.backgroundColor,
+      cells:           cells,
+      wordList:        raw.wordList,
+    );
+  }
+
+  /// Seite neu laden (nach Editor-Änderung): Cache leeren + XML+Override neu einlesen.
+  Future<void> _reloadGrid(String name) async {
+    _grids.remove(name);
+    await _loadGrid(name);
   }
 
   // ── Navigation ─────────────────────────────────────────────────────────────
@@ -139,6 +186,28 @@ class _FreiesSchreibenScreenState extends State<FreiesSchreibenScreen> {
     }
   }
 
+  // ── Zellen-Preview für Editor (kein onTap) ────────────────────────────────
+
+  Widget _buildCellForEditor(GridCell cell) {
+    IconData? icon;
+    if (cell.isHome)         icon = Icons.home_outlined;
+    if (cell.isBack)         icon = Icons.arrow_back_rounded;
+    if (cell.isDeleteWord)   icon = Icons.backspace_outlined;
+    if (cell.isDeleteLetter) icon = Icons.backspace_outlined;
+    if (cell.isCapsLock)     icon = Icons.keyboard_capslock_rounded;
+    if (cell.isShiftKey)     icon = Icons.arrow_upward_rounded;
+
+    return NasiraGridCell(
+      caption:         cell.caption,
+      icon:            icon,
+      backgroundColor: cell.backgroundColor,
+      textColor:       cell.foregroundColor,
+      fontSize:        cell.caption != null && cell.caption!.length <= 2 ? 20 : 11,
+      onTap:           null,
+      borderRadius:    5,
+    );
+  }
+
   // ── Build ──────────────────────────────────────────────────────────────────
 
   @override
@@ -149,13 +218,38 @@ class _FreiesSchreibenScreenState extends State<FreiesSchreibenScreen> {
     return Scaffold(
       backgroundColor: NasiraColors.keyboardBg,
       body: SafeArea(
-        child: page == null
-            ? const Center(child: CircularProgressIndicator(color: Colors.white54))
-            : FutureBuilder<NasiraLoadResult>(
-                future: state.futureLoad,
-                builder: (ctx, snap) =>
-                    _buildGrid(page, state, snap.data?.data),
-              ),
+        child: Column(
+          children: [
+            NasiraTitleBar(
+              backgroundColor: NasiraColors.keyboardBg,
+              onMenuTap: (_editorOpen || page == null)
+                  ? null
+                  : () => setState(() => _editorOpen = true),
+            ),
+            Expanded(
+              child: _editorOpen && page != null
+                  ? GridLayoutEditor(
+                      page:            page,
+                      pageName:        _current,
+                      overrideService: _overrideService,
+                      pageColor:       NasiraColors.keyboardBg,
+                      cellBuilder:     _buildCellForEditor,
+                      onChanged:       () async {
+                        setState(() => _editorOpen = false);
+                        await _reloadGrid(_current);
+                      },
+                      onDismiss:       () => setState(() => _editorOpen = false),
+                    )
+                  : page == null
+                      ? const Center(child: CircularProgressIndicator(color: Colors.white54))
+                      : FutureBuilder<NasiraLoadResult>(
+                          future: state.futureLoad,
+                          builder: (ctx, snap) =>
+                              _buildGrid(page, state, snap.data?.data),
+                        ),
+            ),
+          ],
+        ),
       ),
     );
   }
