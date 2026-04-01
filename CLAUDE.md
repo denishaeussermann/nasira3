@@ -66,7 +66,9 @@
 
 ## RUNDE 3 — Erweiterte Features
 
-### ☐ 19 — Undo / Redo
+### ✅ 19 — Undo / Redo
+**Status: ERLEDIGT**
+**Notizen:** _GridState + _UndoEntry in GridOverrideService; setCellOverride + clearCellOverride + saveLayoutChanges pushen auf _undoStack; undo()/redo() stellen per _restoreGrid wieder her; GridLayoutEditor: didUpdateWidget reinit, _performUndo/_performRedo, Undo/Redo-Buttons in Toolbar.
 ### ☐ 22 — InsertText mit eingebettetem Symbol (Rich Text)
 ### ☐ 23 — Neues Grid erstellen
 

@@ -140,6 +140,19 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
     _rows = widget.page.rows;
   }
 
+  @override
+  void didUpdateWidget(GridLayoutEditor oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Nach Undo/Redo liefert der Parent eine neue page — Editor neu initialisieren.
+    if (!identical(oldWidget.page, widget.page)) {
+      _columns = widget.page.columns;
+      _rows    = widget.page.rows;
+      _rebuildCells();
+      _hasChanges = false;
+      _selected   = null;
+    }
+  }
+
   /// Befüllt _cells mit ALLEN Zellen (inkl. Workspace) und setzt _wsFirstContent = 0.
   ///
   /// Wenn [widget.rawPage] gesetzt ist, werden rawX/rawY aus der Rohseite bezogen
@@ -610,6 +623,20 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
     });
   }
 
+  // ── Undo / Redo ───────────────────────────────────────────────────────────
+
+  Future<void> _performUndo() async {
+    await widget.overrideService.undo();
+    widget.onChanged();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _performRedo() async {
+    await widget.overrideService.redo();
+    widget.onChanged();
+    if (mounted) setState(() {});
+  }
+
   // ── Speichern / Zurücksetzen ──────────────────────────────────────────────
 
   Future<void> _save() async {
@@ -641,14 +668,16 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
         };
       }
     }
-    await widget.overrideService.setLayoutOverrides(widget.pageName, layoutOv);
-
-    // ── Grid-Größe: gespeichert als Gesamt-Zeilen (inkl. Workspace) ──────────
-    final origCols = widget.page.columns;
-    final origRows = widget.page.rows;
-    if (_columns != origCols || totalRows != origRows) {
-      await widget.overrideService.setGridSize(widget.pageName, _columns, totalRows);
-    }
+    // ── Layout + Grid-Größe in einem Undo-Schritt ────────────────────────────
+    final origCols    = widget.page.columns;
+    final origRows    = widget.page.rows;
+    final sizeChanged = _columns != origCols || totalRows != origRows;
+    await widget.overrideService.saveLayoutChanges(
+      widget.pageName,
+      layoutOverrides: layoutOv,
+      newColumns: sizeChanged ? _columns    : null,
+      newRows:    sizeChanged ? totalRows   : null,
+    );
 
     if (mounted) {
       widget.onChanged();
@@ -768,6 +797,30 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
             icon: const Icon(Icons.close, color: Colors.white, size: 22),
             tooltip: 'Schließen',
             onPressed: widget.onDismiss,
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.undo,
+              color: widget.overrideService.canUndo
+                  ? Colors.white
+                  : Colors.white30,
+              size: 20,
+            ),
+            tooltip: 'Rückgängig',
+            onPressed:
+                widget.overrideService.canUndo ? _performUndo : null,
+          ),
+          IconButton(
+            icon: Icon(
+              Icons.redo,
+              color: widget.overrideService.canRedo
+                  ? Colors.white
+                  : Colors.white30,
+              size: 20,
+            ),
+            tooltip: 'Wiederholen',
+            onPressed:
+                widget.overrideService.canRedo ? _performRedo : null,
           ),
           Expanded(
             child: Text(

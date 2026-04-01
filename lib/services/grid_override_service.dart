@@ -6,6 +6,28 @@ import 'package:path_provider/path_provider.dart';
 
 import '../models/grid_page.dart';
 
+// ── Undo / Redo Datentypen ────────────────────────────────────────────────────
+
+/// Snapshot des Override-Zustands für ein einzelnes Grid.
+class _GridState {
+  final Map<String, Map<String, dynamic>>? cells;
+  final Map<String, Map<String, int>>? layout;
+  final Map<String, int>? gridSize;
+  const _GridState({this.cells, this.layout, this.gridSize});
+}
+
+/// Ein Undo-Eintrag enthält den Zustand vor und nach einer Operation.
+class _UndoEntry {
+  final String gridName;
+  final _GridState before;
+  final _GridState after;
+  const _UndoEntry({
+    required this.gridName,
+    required this.before,
+    required this.after,
+  });
+}
+
 /// Persistiert benutzerdefinierte Änderungen an Grid-Wortlisten und -Zellen.
 ///
 /// Datei: `nasira_grid_overrides.json` im App-Dokumentenverzeichnis.
@@ -30,6 +52,14 @@ class GridOverrideService {
   // pageName → { columns, rows }
   final Map<String, Map<String, int>> _gridSizeData = {};
   bool _loaded = false;
+
+  // ── Undo / Redo ───────────────────────────────────────────────────────────
+  static const _kMaxUndo = 50;
+  final List<_UndoEntry> _undoStack = [];
+  final List<_UndoEntry> _redoStack = [];
+
+  bool get canUndo => _undoStack.isNotEmpty;
+  bool get canRedo => _redoStack.isNotEmpty;
 
   // ── Datei-Zugriff ─────────────────────────────────────────────────────────
 
@@ -106,6 +136,67 @@ class GridOverrideService {
     }
   }
 
+  // ── Undo / Redo Hilfsmethoden ─────────────────────────────────────────────
+
+  /// Erstellt einen tiefen Snapshot des Override-Zustands für [gridName].
+  _GridState _snapshotGrid(String gridName) => _GridState(
+        cells: _cellData[gridName]
+            ?.map((k, v) => MapEntry(k, Map<String, dynamic>.from(v))),
+        layout: _layoutData[gridName]
+            ?.map((k, v) => MapEntry(k, Map<String, int>.from(v))),
+        gridSize: _gridSizeData[gridName] != null
+            ? Map<String, int>.from(_gridSizeData[gridName]!)
+            : null,
+      );
+
+  /// Stellt einen Snapshot für [gridName] wieder her (in-memory, kein _save).
+  void _restoreGrid(String gridName, _GridState state) {
+    if (state.cells == null) {
+      _cellData.remove(gridName);
+    } else {
+      _cellData[gridName] =
+          state.cells!.map((k, v) => MapEntry(k, Map<String, dynamic>.from(v)));
+    }
+    if (state.layout == null) {
+      _layoutData.remove(gridName);
+    } else {
+      _layoutData[gridName] =
+          state.layout!.map((k, v) => MapEntry(k, Map<String, int>.from(v)));
+    }
+    if (state.gridSize == null) {
+      _gridSizeData.remove(gridName);
+    } else {
+      _gridSizeData[gridName] = Map<String, int>.from(state.gridSize!);
+    }
+  }
+
+  /// Legt einen Eintrag auf den Undo-Stack und löscht den Redo-Stack.
+  void _pushUndo(_UndoEntry entry) {
+    _undoStack.add(entry);
+    if (_undoStack.length > _kMaxUndo) _undoStack.removeAt(0);
+    _redoStack.clear();
+  }
+
+  // ── Öffentliche API — Undo / Redo ─────────────────────────────────────────
+
+  /// Macht die letzte gespeicherte Änderung rückgängig und schreibt die Datei.
+  Future<void> undo() async {
+    if (_undoStack.isEmpty) return;
+    final entry = _undoStack.removeLast();
+    _redoStack.add(entry);
+    _restoreGrid(entry.gridName, entry.before);
+    await _save();
+  }
+
+  /// Stellt eine rückgängig gemachte Änderung wieder her und schreibt die Datei.
+  Future<void> redo() async {
+    if (_redoStack.isEmpty) return;
+    final entry = _redoStack.removeLast();
+    _undoStack.add(entry);
+    _restoreGrid(entry.gridName, entry.after);
+    await _save();
+  }
+
   // ── Öffentliche API — Wortliste ───────────────────────────────────────────
 
   /// Gibt die überschriebene Wortliste zurück, oder null wenn keine vorhanden.
@@ -160,6 +251,7 @@ class GridOverrideService {
     String? fontColor,
     double? fontSize,
   }) async {
+    final before = _snapshotGrid(gridName);
     _cellData.putIfAbsent(gridName, () => {});
     final key      = '$x,$y';
     final existing = Map<String, dynamic>.from(_cellData[gridName]![key] ?? {});
@@ -178,6 +270,11 @@ class GridOverrideService {
     if (fontSize != null) existing['fontSize'] = fontSize;
     _cellData[gridName]![key] = existing;
     await _save();
+    _pushUndo(_UndoEntry(
+      gridName: gridName,
+      before: before,
+      after: _snapshotGrid(gridName),
+    ));
   }
 
   /// Löscht alle Zell-Overrides für [gridName].
@@ -188,9 +285,43 @@ class GridOverrideService {
 
   /// Löscht den Override für eine einzelne Zelle.
   Future<void> clearCellOverride(String gridName, int x, int y) async {
+    final before = _snapshotGrid(gridName);
     _cellData[gridName]?.remove('$x,$y');
     if (_cellData[gridName]?.isEmpty == true) _cellData.remove(gridName);
     await _save();
+    _pushUndo(_UndoEntry(
+      gridName: gridName,
+      before: before,
+      after: _snapshotGrid(gridName),
+    ));
+  }
+
+  // ── Öffentliche API — Layout + Undo ──────────────────────────────────────
+
+  /// Speichert Layout- und Grid-Größen-Overrides in einem einzigen Undo-Schritt.
+  ///
+  /// [newColumns] / [newRows]: null = keine Größenänderung.
+  Future<void> saveLayoutChanges(
+    String gridName, {
+    required Map<String, Map<String, int>> layoutOverrides,
+    int? newColumns,
+    int? newRows,
+  }) async {
+    final before = _snapshotGrid(gridName);
+    if (layoutOverrides.isEmpty) {
+      _layoutData.remove(gridName);
+    } else {
+      _layoutData[gridName] = layoutOverrides;
+    }
+    if (newColumns != null && newRows != null) {
+      _gridSizeData[gridName] = {'columns': newColumns, 'rows': newRows};
+    }
+    await _save();
+    _pushUndo(_UndoEntry(
+      gridName: gridName,
+      before: before,
+      after: _snapshotGrid(gridName),
+    ));
   }
 
   // ── Öffentliche API — Layout ──────────────────────────────────────────────
