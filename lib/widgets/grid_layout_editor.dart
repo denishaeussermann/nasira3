@@ -951,7 +951,8 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
               onPanStart:  (d) => _handlePanStart(d.localPosition),
               onPanUpdate: (d) => _handlePanUpdate(d.localPosition),
               onPanEnd:    (_) => _handlePanEnd(),
-              child: ColoredBox(
+              child: ExcludeSemantics(
+                child: ColoredBox(
                 color: widget.pageColor,
                 child: Stack(
                   clipBehavior: Clip.none,
@@ -1022,6 +1023,7 @@ class _GridLayoutEditorState extends State<GridLayoutEditor> {
             ],
           ),
         ),
+        ),        // ExcludeSemantics
             ),
           ),
         ],
