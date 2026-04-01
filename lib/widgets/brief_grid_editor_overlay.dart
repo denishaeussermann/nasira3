@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../models/grid_page.dart';
 import '../nasira_app_state.dart';
 import '../services/grid_override_service.dart';
+import '../services/grid_style_service.dart';
 import '../theme/nasira_colors.dart';
 
 /// Vollbild-Overlay – Rasterstruktur anzeigen, Zellen markieren und bearbeiten.
@@ -1009,6 +1010,31 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
 
                   const SizedBox(height: 20),
 
+                  // ── Stil-Vorlage (Named Styles) ──────────────────────────
+                  const Text('Stil-Vorlage',
+                      style: TextStyle(
+                          color: Colors.white70,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Setzt Hintergrundfarbe, Textfarbe und Form auf einmal.',
+                    style: TextStyle(color: Colors.white38, fontSize: 10.5),
+                  ),
+                  const SizedBox(height: 8),
+                  _NamedStylePicker(
+                    pendingBgColor: _pendingBgColor,
+                    pendingFgColor: _pendingFgColor,
+                    pendingShape:   _pendingShape,
+                    onPick: (bg, fg, shape) => setState(() {
+                      _pendingBgColor = bg;
+                      _pendingFgColor = fg;
+                      _pendingShape   = shape;
+                    }),
+                  ),
+
+                  const SizedBox(height: 20),
+
                   // ── Hintergrundfarbe ─────────────────────────────────────
                   Row(
                     children: [
@@ -1330,6 +1356,98 @@ class _ShapeBtn extends StatelessWidget {
           ),
           textAlign: TextAlign.center,
         ),
+      ),
+    );
+  }
+}
+
+// ── Named-Style-Picker ────────────────────────────────────────────────────────
+
+/// Horizontale Chip-Leiste mit allen Named Styles aus [GridStyleService].
+/// Tippt der User einen Chip an, werden bg-Farbe, fg-Farbe und Form
+/// gleichzeitig gesetzt (en-bloc). Ein zweites Antippen hebt die Auswahl auf.
+class _NamedStylePicker extends StatelessWidget {
+  final Color?  pendingBgColor;
+  final Color?  pendingFgColor;
+  final String? pendingShape;
+
+  /// Callback: (backgroundColor, fontColor, shape)
+  final void Function(Color bg, Color fg, String? shape) onPick;
+
+  const _NamedStylePicker({
+    required this.pendingBgColor,
+    required this.pendingFgColor,
+    required this.pendingShape,
+    required this.onPick,
+  });
+
+  bool _matches(GridStyleEntry s) {
+    if (pendingBgColor == null) return false;
+    final bgMatch = pendingBgColor!.toARGB32() == s.backgroundColor.toARGB32();
+    final fgMatch = pendingFgColor?.toARGB32() == s.fontColor.toARGB32();
+    final shapeMatch = pendingShape == s.shape;
+    return bgMatch && fgMatch && shapeMatch;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const styles = GridStyleService.styles;
+    return SizedBox(
+      height: 68,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: styles.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 6),
+        itemBuilder: (ctx, i) {
+          final s = styles[i];
+          final selected = _matches(s);
+          return GestureDetector(
+            onTap: () => onPick(s.backgroundColor, s.fontColor, s.shape),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 120),
+              width: 72,
+              decoration: BoxDecoration(
+                color: s.backgroundColor,
+                borderRadius: BorderRadius.circular(
+                  s.shape == 'oval' || s.shape == 'pill' ? 34 : 8,
+                ),
+                border: Border.all(
+                  color: selected ? Colors.white : Colors.white24,
+                  width: selected ? 2.5 : 1,
+                ),
+                boxShadow: selected
+                    ? [BoxShadow(
+                        color: Colors.white.withValues(alpha: 0.3),
+                        blurRadius: 5)]
+                    : null,
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  if (selected)
+                    const Icon(Icons.check, size: 16, color: Colors.white),
+                  Expanded(
+                    child: Center(
+                      child: Text(
+                        s.name,
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: s.fontColor,
+                          fontSize: 8.5,
+                          fontWeight: FontWeight.w600,
+                          height: 1.2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
       ),
     );
   }
