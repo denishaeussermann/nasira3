@@ -478,6 +478,12 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
   /// Form-Überschreibung: 'roundedRect' | 'oval' | 'pill' | null (= Originalform).
   String? _pendingShape;
 
+  /// Hintergrundfarbe-Override (null = Originalfarbe).
+  Color? _pendingBgColor;
+
+  /// Textfarbe-Override (null = Originalfarbe).
+  Color? _pendingFgColor;
+
   /// Suchergebnisse (Asset-Pfade).
   List<String> _searchResults = const [];
 
@@ -498,8 +504,10 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
           widget.cell.insertText?.trim() ??
           '',
     );
-    _pendingStem  = existing?['symbolStem'] as String? ?? widget.cell.symbolStem;
-    _pendingShape = existing?['shape']      as String?;
+    _pendingStem    = existing?['symbolStem'] as String? ?? widget.cell.symbolStem;
+    _pendingShape   = existing?['shape']     as String?;
+    _pendingBgColor = _hexToColor(existing?['backgroundColor'] as String?);
+    _pendingFgColor = _hexToColor(existing?['fontColor']       as String?);
     _searchCtrl = TextEditingController(text: _pendingStem ?? '');
 
     // Befehle laden: Override hat Vorrang, sonst alle XML-Befehle
@@ -564,10 +572,16 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
       widget.pageName,
       widget.cell.x,
       widget.cell.y,
-      caption:    caption.isNotEmpty ? caption : null,
-      symbolStem: _pendingStem,
-      commands:   commands,
-      shape:      _pendingShape,
+      caption:         caption.isNotEmpty ? caption : null,
+      symbolStem:      _pendingStem,
+      commands:        commands,
+      shape:           _pendingShape,
+      backgroundColor: _pendingBgColor != null
+          ? _colorToHex(_pendingBgColor!)
+          : '',   // '' = Eintrag löschen wenn kein Override
+      fontColor:       _pendingFgColor != null
+          ? _colorToHex(_pendingFgColor!)
+          : '',
     );
     if (mounted) Navigator.pop(context, true);
   }
@@ -707,6 +721,19 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
       ),
     );
   }
+
+  // ── Farb-Hilfsfunktionen ──────────────────────────────────────────────────
+
+  /// Parst einen 8-stelligen AARRGGBB-Hex-String in eine Color (oder null).
+  static Color? _hexToColor(String? hex) {
+    if (hex == null || hex.length != 8) return null;
+    final val = int.tryParse(hex, radix: 16);
+    return val == null ? null : Color(val);
+  }
+
+  /// Wandelt eine Color in einen 8-stelligen AARRGGBB-Hex-String um.
+  static String _colorToHex(Color c) =>
+      c.toARGB32().toRadixString(16).padLeft(8, '0');
 
   InputDecoration _inputDeco(String hint) => InputDecoration(
     filled: true,
@@ -975,6 +1002,58 @@ class _CellEditorSheetState extends State<_CellEditorSheet> {
                     onChanged: (v) => setState(() => _pendingShape = v),
                   ),
 
+                  const SizedBox(height: 20),
+
+                  // ── Hintergrundfarbe ─────────────────────────────────────
+                  Row(
+                    children: [
+                      const Text('Hintergrundfarbe',
+                          style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                      const Spacer(),
+                      if (_pendingBgColor != null)
+                        GestureDetector(
+                          onTap: () => setState(() => _pendingBgColor = null),
+                          child: const Text('Original',
+                              style: TextStyle(
+                                  color: Colors.white38, fontSize: 11)),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _ColorSwatchPicker(
+                    selected: _pendingBgColor,
+                    onChanged: (c) => setState(() => _pendingBgColor = c),
+                  ),
+
+                  const SizedBox(height: 20),
+
+                  // ── Textfarbe ────────────────────────────────────────────
+                  Row(
+                    children: [
+                      const Text('Textfarbe',
+                          style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600)),
+                      const Spacer(),
+                      if (_pendingFgColor != null)
+                        GestureDetector(
+                          onTap: () => setState(() => _pendingFgColor = null),
+                          child: const Text('Original',
+                              style: TextStyle(
+                                  color: Colors.white38, fontSize: 11)),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  _ColorSwatchPicker(
+                    selected: _pendingFgColor,
+                    onChanged: (c) => setState(() => _pendingFgColor = c),
+                  ),
+
                   const SizedBox(height: 24),
 
                   // ── Funktionen / Befehle (Liste) ─────────────────────────
@@ -1199,6 +1278,81 @@ class _ShapeBtn extends StatelessWidget {
           textAlign: TextAlign.center,
         ),
       ),
+    );
+  }
+}
+
+// ── Farb-Palette-Picker ───────────────────────────────────────────────────────
+
+class _ColorSwatchPicker extends StatelessWidget {
+  final Color? selected;
+  final ValueChanged<Color?> onChanged;
+
+  const _ColorSwatchPicker({required this.selected, required this.onChanged});
+
+  static const _palette = <Color>[
+    // Nasira-Palette
+    Color(0xFF5D8057), // navGreen
+    Color(0xFF91B38A), // briefTopic
+    Color(0xFF3B5936), // briefQuestion
+    Color(0xFF2E4529), // briefTopicDark
+    Color(0xFFC4302B), // briefSentence (Rot)
+    Color(0xFFBFBBAC), // briefNeutral (Beige)
+    Color(0xFF5E80C4), // freiesSchreiben (Blau)
+    Color(0xFFBFDBB8), // unterthema
+    Color(0xFFC97F7E), // satzanfangVergangenheit
+    Color(0xFFACC2A8), // frageVergangenheit
+    Color(0xFFE6F2E3), // weitereWoerter
+    Color(0xFF807C72), // navTaupe
+    // Tagebuch
+    Color(0xFFE6A800), // Montag
+    Color(0xFF2E7D32), // Dienstag
+    Color(0xFF1565C0), // Mittwoch
+    Color(0xFFC62828), // Donnerstag
+    Color(0xFFE65100), // Freitag
+    Color(0xFFAD1457), // Sonntag
+    // Neutral
+    Colors.white,
+    Color(0xFFE0E0E0),
+    Color(0xFF9E9E9E),
+    Color(0xFF616161),
+    Color(0xFF212121),
+    Colors.black,
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Wrap(
+      spacing: 6,
+      runSpacing: 6,
+      children: _palette.map((color) {
+        final isSelected = selected != null &&
+            selected!.toARGB32() == color.toARGB32();
+        return GestureDetector(
+          onTap: () => onChanged(isSelected ? null : color),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 100),
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: isSelected ? Colors.white : Colors.white24,
+                width: isSelected ? 2.5 : 1,
+              ),
+              boxShadow: isSelected
+                  ? [BoxShadow(
+                      color: Colors.white.withValues(alpha: 0.3),
+                      blurRadius: 4)]
+                  : null,
+            ),
+            child: isSelected
+                ? const Icon(Icons.check, size: 16, color: Colors.white)
+                : null,
+          ),
+        );
+      }).toList(),
     );
   }
 }

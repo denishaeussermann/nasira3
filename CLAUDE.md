@@ -34,15 +34,9 @@
 **Status: ERLEDIGT**
 **Notizen:** `shapeOverride` in GridCell, `_ShapeSelector`-Widget (Original/Abgerundet/Oval/Pille), alle _applyOverride und Render-Stellen auf `isFullyRounded` umgestellt.
 
-### ☐ 5 — Hintergrundfarbe Picker
-**Status: OFFEN**
-**Dateien:** `brief_grid_editor_overlay.dart`, `grid_override_service.dart`, alle _applyOverride
-**Was:** flutter_colorpicker oder Material ColorPicker im Sheet, speichern als `backgroundColor` (hex)
-
-### ☐ 6 — Textfarbe Picker
-**Status: OFFEN**
-**Dateien:** wie #5
-**Was:** Zweiter ColorPicker für `fontColor`
+### ✅ 5+6 — Hintergrundfarbe + Textfarbe Picker
+**Status: ERLEDIGT**
+**Notizen:** _ColorSwatchPicker (24 Farben aus Nasira-Palette), backgroundColorOverride + fontColorOverride in GridCell, hex-Kodierung AARRGGBB, alle _applyOverride-Methoden aktualisiert.
 
 ### ☐ 7 — Schriftgröße
 **Status: OFFEN**

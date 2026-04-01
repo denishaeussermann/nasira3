@@ -139,6 +139,12 @@ class GridCell {
   /// null = Standardform aus [style] verwenden.
   final String? shapeOverride;
 
+  /// Optionale Hintergrundfarbe (überschreibt [style.backgroundColor]).
+  final Color? backgroundColorOverride;
+
+  /// Optionale Textfarbe (überschreibt [style.foregroundColor]).
+  final Color? fontColorOverride;
+
   const GridCell({
     required this.x,
     required this.y,
@@ -154,10 +160,12 @@ class GridCell {
     required this.type,
     required this.commands,
     this.shapeOverride,
+    this.backgroundColorOverride,
+    this.fontColorOverride,
   });
 
-  Color get backgroundColor => style.backgroundColor;
-  Color get foregroundColor => style.foregroundColor;
+  Color get backgroundColor => backgroundColorOverride ?? style.backgroundColor;
+  Color get foregroundColor => fontColorOverride ?? style.foregroundColor;
   bool get hasBorder => style.hasBorder;
 
   /// Ob die Zelle oval/elliptisch dargestellt wird (Override hat Vorrang).

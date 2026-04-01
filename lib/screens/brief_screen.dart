@@ -243,8 +243,10 @@ class _BriefScreenState extends State<BriefScreen> {
           localImagePath: c.localImagePath,
           iconData:       c.iconData,
           style:          c.style, type: c.type,
-          commands:       _parseCommandOverrides(cOv) ?? c.commands,
-          shapeOverride:  cOv?['shape'] as String?,
+          commands:               _parseCommandOverrides(cOv) ?? c.commands,
+          shapeOverride:          cOv?['shape'] as String?,
+          backgroundColorOverride: _hexToColor(cOv?['backgroundColor'] as String?),
+          fontColorOverride:       _hexToColor(cOv?['fontColor']       as String?),
         );
       }).toList();
 
@@ -277,6 +279,12 @@ class _BriefScreenState extends State<BriefScreen> {
         punctuation: m['punctuation'] as String?,
       );
     }).toList();
+  }
+
+  static Color? _hexToColor(String? hex) {
+    if (hex == null || hex.length != 8) return null;
+    final val = int.tryParse(hex, radix: 16);
+    return val == null ? null : Color(val);
   }
 
   // ── Navigation ──────────────────────────────────────────────────────────────

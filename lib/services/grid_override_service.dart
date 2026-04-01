@@ -146,6 +146,8 @@ class GridOverrideService {
   /// [commands]: Liste von Befehl-Maps, z. B. [{'type': 'jumpTo', 'jumpTarget': 'Brief 4'}].
   ///             null = nicht ändern, [] = Befehle löschen.
   /// [shape]: 'roundedRect' | 'oval' | 'pill' | null (null = nicht ändern).
+  /// [backgroundColor] / [fontColor]: 8-stelliger Hex-String 'AARRGGBB', oder
+  ///   Leer-String '' = Override löschen, null = nicht ändern.
   Future<void> setCellOverride(
     String gridName,
     int x,
@@ -154,6 +156,8 @@ class GridOverrideService {
     String? symbolStem,
     List<Map<String, dynamic>>? commands,
     String? shape,
+    String? backgroundColor,
+    String? fontColor,
   }) async {
     _cellData.putIfAbsent(gridName, () => {});
     final key      = '$x,$y';
@@ -162,6 +166,14 @@ class GridOverrideService {
     if (symbolStem != null) existing['symbolStem'] = symbolStem;
     if (commands   != null) existing['commands']   = commands;
     if (shape      != null) existing['shape']      = shape;
+    if (backgroundColor != null) {
+      if (backgroundColor.isEmpty) { existing.remove('backgroundColor'); }
+      else { existing['backgroundColor'] = backgroundColor; }
+    }
+    if (fontColor != null) {
+      if (fontColor.isEmpty) { existing.remove('fontColor'); }
+      else { existing['fontColor'] = fontColor; }
+    }
     _cellData[gridName]![key] = existing;
     await _save();
   }
