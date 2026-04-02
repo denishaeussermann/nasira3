@@ -199,7 +199,7 @@ class NasiraData {
       final key = normalize(w.text);
       if (key == normalized) {
         exactMatches.add(w);
-      } else if (normalized.length >= 3 && key.startsWith(normalized)) {
+      } else if (normalized.length >= 2 && key.startsWith(normalized)) {
         prefixMatches.add(w);
       }
     }

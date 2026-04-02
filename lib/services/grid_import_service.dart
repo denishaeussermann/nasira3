@@ -329,8 +329,46 @@ class GridImportService {
         const GridCellCommand(type: GridCommandType.nextLine),
       'Action.DocumentStart' =>
         const GridCellCommand(type: GridCommandType.documentStart),
+      'Prediction.ChangeWordList' =>
+        _parseChangeWordList(cmdEl),
+      'Prediction.RevertToGridWordList' =>
+        const GridCellCommand(type: GridCommandType.revertWordList),
       _ => null,
     };
+  }
+
+  /// Parst den inline-`<WordList>`-Parameter eines Prediction.ChangeWordList-Befehls.
+  GridCellCommand _parseChangeWordList(XmlElement cmdEl) {
+    final items = <GridWordListItem>[];
+    for (final p in cmdEl.findElements('Parameter')) {
+      if (p.getAttribute('Key') != 'wordlist') continue;
+      // Der Parameter enthält eine eingebettete <WordList>-XML-Struktur.
+      // findAllElements durchsucht alle Kind-Elemente rekursiv.
+      int idx = 0;
+      for (final itemEl in p.findAllElements('WordListItem')) {
+        // Text aus <r>-Tags zusammensetzen
+        final texts = itemEl.findAllElements('r').map((e) => e.innerText).join().trim();
+        if (texts.isEmpty) { idx++; continue; }
+        // Symbol aus <s Image="...">
+        final sEl    = itemEl.findAllElements('s').firstOrNull;
+        final imgRaw = sEl?.getAttribute('Image');
+        final (metacmPath, symbolStem, symbolCategory) = _resolveMetacm(imgRaw);
+        final localImagePath = _findWordlistImage('', idx); // keine Grid-spezifischen Bilder
+        items.add(GridWordListItem(
+          text:           texts,
+          metacmPath:     metacmPath,
+          symbolStem:     symbolStem,
+          symbolCategory: symbolCategory,
+          localImagePath: localImagePath,
+        ));
+        idx++;
+      }
+      break;
+    }
+    return GridCellCommand(
+      type:     GridCommandType.changeWordList,
+      wordList: items.isEmpty ? null : items,
+    );
   }
 
   // ── Hilfsfunktionen ────────────────────────────────────────────────────────

@@ -405,6 +405,8 @@ class _DateiScreenState extends State<DateiScreen> {
         case GridCommandType.capsLock:
         case GridCommandType.shift:
         case GridCommandType.speak:
+        case GridCommandType.changeWordList:
+        case GridCommandType.revertWordList:
         case GridCommandType.other:
           break;
       }

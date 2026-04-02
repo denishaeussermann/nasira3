@@ -109,6 +109,9 @@ class _BriefScreenState extends State<BriefScreen> {
   final Map<_BriefSchritt, GridPage> _pages = {};    // Override-angewendete Seiten
   /// Aktuelle WL-Seite für paginierte AutoContent-Slots (wird bei Navigation zurückgesetzt).
   int _wlPage = 0;
+  /// Aktive überschriebene WordList (null = Grid-Standard).
+  /// Wird durch changeWordList/revertWordList-Befehle gesetzt.
+  List<GridWordListItem>? _activeWordList;
   /// Reverse-Lookup: Grid3-Name → _BriefSchritt (für Jump.To-Befehle).
   late final Map<String, _BriefSchritt> _gridNameToStep;
   /// Steuert den In-Place-Layout-Editor (transparentes Overlay).
@@ -325,6 +328,7 @@ class _BriefScreenState extends State<BriefScreen> {
       _history.add(_schritt);
       _schritt = step;
       _wlPage = 0;
+      _activeWordList = null; // WordList-Override bei Navigation zurücksetzen
     });
   }
 
@@ -531,40 +535,45 @@ class _BriefScreenState extends State<BriefScreen> {
     ]);
   }
 
-  /// Gibt die effektive Wortliste für einen Schritt zurück (inkl. step-spezifischer Fallbacks).
+  /// Gibt die effektive Wortliste zurück.
+  /// Priorität: aktiver WordList-Override (_activeWordList) > schritt-spezifischer Fallback > Grid-Standard.
   List<GridWordListItem> _effectiveWordList(
-      GridPage page, _BriefSchritt schritt, NasiraAppState state) =>
-      switch (schritt) {
-        _BriefSchritt.einleitung => [
-            ...state.customSentences
-                .forModule('brief')
-                .map((s) => GridWordListItem(text: s.sentence)),
-            ...page.wordList,
-          ],
-        _BriefSchritt.begruessung => page.wordList.isNotEmpty
-            ? page.wordList
-            : const [
-                GridWordListItem(
-                  text: 'Hallo',
-                  symbolStem: 'hallo2',
-                  symbolCategory: 'konversation_interaktion',
-                  metacmPath: 'konversation_interaktion/hallo2',
-                ),
-                GridWordListItem(
-                  text: 'Liebe',
-                  symbolStem: 'freundin',
-                  symbolCategory: 'liebe_sexualitaet',
-                  metacmPath: 'liebe_sexualitaet/freundin',
-                ),
-                GridWordListItem(
-                  text: 'Lieber',
-                  symbolStem: 'freund',
-                  symbolCategory: 'liebe_sexualitaet',
-                  metacmPath: 'liebe_sexualitaet/freund',
-                ),
-              ],
-        _ => page.wordList,
-      };
+      GridPage page, _BriefSchritt schritt, NasiraAppState state) {
+    // Aktiver Override (durch changeWordList-Befehl gesetzt)
+    if (_activeWordList != null) return _activeWordList!;
+
+    return switch (schritt) {
+      _BriefSchritt.einleitung => [
+          ...state.customSentences
+              .forModule('brief')
+              .map((s) => GridWordListItem(text: s.sentence)),
+          ...page.wordList,
+        ],
+      _BriefSchritt.begruessung => page.wordList.isNotEmpty
+          ? page.wordList
+          : const [
+              GridWordListItem(
+                text: 'Hallo',
+                symbolStem: 'hallo2',
+                symbolCategory: 'konversation_interaktion',
+                metacmPath: 'konversation_interaktion/hallo2',
+              ),
+              GridWordListItem(
+                text: 'Liebe',
+                symbolStem: 'freundin',
+                symbolCategory: 'liebe_sexualitaet',
+                metacmPath: 'liebe_sexualitaet/freundin',
+              ),
+              GridWordListItem(
+                text: 'Lieber',
+                symbolStem: 'freund',
+                symbolCategory: 'liebe_sexualitaet',
+                metacmPath: 'liebe_sexualitaet/freund',
+              ),
+            ],
+      _ => page.wordList,
+    };
+  }
 
   /// Stack-basiertes Grid: rendert die gesamte Seite (Workspace + Nav + Inhalt)
   /// exakt nach den XML-Koordinaten — 1:1 wie im Grid3-Original.
@@ -648,6 +657,11 @@ class _BriefScreenState extends State<BriefScreen> {
     );
   }
 
+  /// Prüft ob eine Zelle einen changeWordList- oder revertWordList-Befehl enthält.
+  bool _hasChangeWordList(GridCell cell) => cell.commands.any((c) =>
+      c.type == GridCommandType.changeWordList ||
+      c.type == GridCommandType.revertWordList);
+
   /// Rendert eine reguläre (nicht-AutoContent, nicht-Workspace) Zelle.
   Widget _buildRegularCell(
     NasiraAppState state,
@@ -668,11 +682,25 @@ class _BriefScreenState extends State<BriefScreen> {
       onTap = () => Navigator.popUntil(context, (r) => r.isFirst);
     } else if (cell.isMoreWords) {
       onTap = () => setState(() {
+        final effectiveList = _effectiveWordList(page, _schritt, state);
         if (acCount > 0) {
-          final totalPages = (page.wordList.length / acCount).ceil();
+          final totalPages = (effectiveList.length / acCount).ceil();
           if (totalPages > 1) _wlPage = (_wlPage + 1) % totalPages;
         }
       });
+    } else if (_hasChangeWordList(cell)) {
+      // changeWordList + optional insertPhrase kombiniert ausführen
+      onTap = () {
+        for (final cmd in cell.commands) {
+          if (cmd.type == GridCommandType.changeWordList && cmd.wordList != null) {
+            setState(() { _activeWordList = cmd.wordList; _wlPage = 0; });
+          } else if (cmd.type == GridCommandType.revertWordList) {
+            setState(() { _activeWordList = null; _wlPage = 0; });
+          } else if (cmd.type == GridCommandType.insertText && cmd.insertText != null) {
+            state.insertPhrase(cmd.insertText!);
+          }
+        }
+      };
     } else if (cell.isInsertCell) {
       onTap = () => state.insertPhrase(cell.insertText!);
     } else if (cell.isPunctuation) {

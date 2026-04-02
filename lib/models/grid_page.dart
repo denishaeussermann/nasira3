@@ -140,6 +140,8 @@ enum GridCommandType {
   previousLine,       // Action.PreviousLine — Cursor eine Zeile zurück
   nextLine,           // Action.NextLine — Cursor eine Zeile vor
   documentStart,      // Action.DocumentStart — Cursor an Textanfang
+  changeWordList,     // Prediction.ChangeWordList — wechselt WordList der AutoContent-Slots
+  revertWordList,     // Prediction.RevertToGridWordList — zurück zur Grid-Standard-WordList
   other,
 }
 
@@ -152,6 +154,8 @@ class GridCellCommand {
   /// null = klassischer Plaintext-Modus; nicht-null = Chip-Modus.
   /// [insertText] bleibt stets als AAC-Ausführungs-Fallback erhalten.
   final List<InsertSegment>? segments;
+  /// Inline-WordList für changeWordList — direkt aus dem Grid3-XML extrahiert.
+  final List<GridWordListItem>? wordList;
 
   const GridCellCommand({
     required this.type,
@@ -159,6 +163,7 @@ class GridCellCommand {
     this.jumpTarget,
     this.punctuation,
     this.segments,
+    this.wordList,
   });
 
   @override

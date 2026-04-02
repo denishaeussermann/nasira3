@@ -463,6 +463,8 @@ const _kCommandLabels = <GridCommandType, String>{
   GridCommandType.previousLine:         'Vorherige Zeile',
   GridCommandType.nextLine:             'Nächste Zeile',
   GridCommandType.documentStart:        'Textanfang',
+  GridCommandType.changeWordList:       'Wortliste wechseln',
+  GridCommandType.revertWordList:       'Standard-Wortliste',
 };
 
 // ── Mutable Segment (für insertText-Chip-Editor) ──────────────────────────────
